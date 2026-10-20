@@ -2,7 +2,7 @@
 
 A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.com/persiyanov/herdr-reviewr)-style code review to Neovim: open a diff of two branches, comment on lines or ranges, and send the whole review to a running coding agent (Claude Code, Codex, OpenCode, Aider, …) — entirely from inside Neovim.
 
-![reviewr.nvim screenshot](assets/screenshot.png)
+![reviewr.nvim — captured from a live Neovim session (`nvim --headless`, screen dumped via `vim.fn.screenstring` and rasterized). Left: base. Right: feature, with a line comment sitting above the changed line. Floating review panel lists both comments.](assets/screenshot.png)
 
 ## Features
 

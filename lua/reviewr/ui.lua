@@ -52,13 +52,19 @@ end
 -- ---------- diff buffers / windows ----------
 function M.open_diff(left_buf, right_buf, opts)
   opts = opts or {}
-  vim.cmd("diffthis")
+  -- current window becomes the left (base) pane
   local left_win = vim.api.nvim_get_current_win()
-  vim.cmd("vsplit")
-  local right_win = vim.api.nvim_get_current_win()
   if left_buf then vim.api.nvim_win_set_buf(left_win, left_buf) end
+  vim.cmd("diffthis")
+  vim.cmd("rightbelow vsplit")
+  local right_win = vim.api.nvim_get_current_win()
   if right_buf then vim.api.nvim_win_set_buf(right_win, right_buf) end
   vim.cmd("diffthis")
+  -- titles
+  pcall(function()
+    vim.wo[left_win].winbar = "  base  "
+    vim.wo[right_win].winbar = "  feature  "
+  end)
   state.diff = { left_win = left_win, right_win = right_win, left_buf = left_buf, right_buf = right_buf }
   return state.diff
 end
@@ -94,12 +100,12 @@ function M.set_extmark(bufnr, line, text, opts)
   if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
   opts = opts or {}
   local ns = ensure_ns()
-  return vim.api.nvim_buf_set_extmark(bufnr, ns, (line or 1) - 1, 0, vim.tbl_extend("force", {
-    virt_text = { { text or "", "ReviewrCommentText" } },
-    virt_text_pos = opts.pos or "eol",
-    hl_group = opts.hl,
+  local body = "  " .. (text or ""):gsub("^%s+", "")
+  return vim.api.nvim_buf_set_extmark(bufnr, ns, math.max((line or 1) - 1, 0), 0, {
+    virt_lines = { { { body, "ReviewrCommentText" } } },
+    virt_lines_above = true,
     priority = opts.priority or 10,
-  }, opts.extra or {}))
+  })
 end
 
 function M.clear_extmarks(bufnr)
@@ -152,10 +158,16 @@ end
 function M.statusline()
   local n = 0
   local ok, store = pcall(require, "reviewr.store")
-  if ok and type(store) == "table" and store.count then
-    n = store.count() or 0
+  local scope_ok, scope = pcall(require, "reviewr.scope")
+  if ok and store.count then
+    local q = {}
+    if scope_ok and scope.get and scope.get() then q.scope = scope.get().name end
+    n = store.count(q) or 0
   end
-  return " reviewr │ " .. n .. " comments "
+  local label = " reviewr "
+  local s = scope_ok and scope.get and scope.get()
+  if s and s.name then label = label .. "│ " .. s.name .. " " end
+  return label .. "│ " .. n .. (n == 1 and " comment " or " comments ")
 end
 
 -- aliases for common / expected names
