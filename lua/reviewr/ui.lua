@@ -151,8 +151,58 @@ function M.toggle_panel(items)
   return true
 end
 
+-- ---------- help ----------
+local help_state = { win = nil, buf = nil }
+
+function M.toggle_help(legend)
+  if help_state.win and vim.api.nvim_win_is_valid(help_state.win) then
+    vim.api.nvim_win_close(help_state.win, true)
+    help_state.win, help_state.buf = nil, nil
+    return false
+  end
+  legend = legend or require("reviewr.keymaps").legend
+  local lines = { " reviewr — keys", "" }
+  local width = 28
+  for _, row in ipairs(legend) do
+    local key = " " .. row[1] .. string.rep(" ", math.max(1, 5 - vim.fn.strwidth(row[1])))
+    lines[#lines + 1] = key .. row[2]
+    width = math.max(width, vim.fn.strwidth(lines[#lines]) + 2)
+  end
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = " press ? or q to close"
+  help_state.buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(help_state.buf, 0, -1, false, lines)
+  vim.bo[help_state.buf].modifiable = false
+  vim.bo[help_state.buf].buftype = "nofile"
+  help_state.win = vim.api.nvim_open_win(help_state.buf, true, {
+    relative = "editor",
+    width = width,
+    height = #lines,
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    row = math.max(0, math.floor((vim.o.lines - #lines) / 2)),
+    style = "minimal",
+    border = "rounded",
+    title = " ? ",
+    title_pos = "center",
+  })
+  vim.wo[help_state.win].winhl = "Normal:Normal,FloatBorder:ReviewrPanelBorder"
+  for _, key in ipairs({ "?", "q", "<esc>" }) do
+    vim.keymap.set("n", key, function() M.toggle_help() end,
+      { buffer = help_state.buf, silent = true, nowait = true })
+  end
+  return true
+end
+
 function M.set_statusline(str)
   vim.o.statusline = str or "%!v:lua.require('reviewr.ui').statusline()"
+end
+
+-- The footer says the next useful step, the way herdr-reviewr's does.
+function M.hint(count)
+  if (count or 0) == 0 then
+    return "c  comment on this line    ?  all keys"
+  end
+  return "s  send to agent    y  copy    ?  all keys"
 end
 
 function M.statusline()
@@ -167,7 +217,16 @@ function M.statusline()
   local label = " reviewr "
   local s = scope_ok and scope.get and scope.get()
   if s and s.name then label = label .. "│ " .. s.name .. " " end
-  return label .. "│ " .. n .. (n == 1 and " comment " or " comments ")
+  local left = label .. "│ " .. n .. (n == 1 and " comment" or " comments")
+  local right = M.hint(n)
+  local width = math.floor(vim.o.columns / math.max(1, #vim.api.nvim_tabpage_list_wins(0)))
+  local gap = math.max(2, width - vim.fn.strwidth(left) - vim.fn.strwidth(right))
+  return left .. string.rep(" ", gap) .. right
+end
+
+function M.refresh_status()
+  vim.o.statusline = "%!v:lua.require('reviewr.ui').statusline()"
+  vim.cmd("redrawstatus")
 end
 
 -- aliases for common / expected names

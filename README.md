@@ -54,9 +54,21 @@ nvim -c 'cd /path/repo' -c 'ReviewrOpen HEAD feature'
 | `:ReviewrExport {clipboard\|send\|inbox}` | export all comments (all-or-none) |
 | `:ReviewrClear` | clear comments |
 
-## Keymaps (buffer-local defaults)
+## Keys
 
-`gc` comment · `ge` export · `gp` toggle review panel · `gd` diff · `]c`/`[c` hunks. All remappable via `setup({ keymaps = {...} })`.
+The footer always shows the next step. `?` lists every key.
+
+| Key | Action |
+|---|---|
+| `c` | comment on the current line, or the visual selection |
+| `s` | send every comment to the running agent |
+| `y` | copy every comment |
+| `l` | list comments |
+| `]c` / `[c` | next / previous change |
+| `?` | all keys |
+| `q` | close the review |
+
+All buffer-local and remappable via `require("reviewr.keymaps").set_defaults()`.
 
 ## Agent send protocol
 

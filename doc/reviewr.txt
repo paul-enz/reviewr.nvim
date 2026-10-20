@@ -28,10 +28,18 @@ Functions:
 
 KEYMAPS                                                 *reviewr-keymaps*
 
-  require("reviewr.keymaps").apply(bufnr, overrides)
-  require("reviewr.keymaps").set_defaults(tbl)
+The footer always shows the next step. `?` lists every key.
 
-Defaults are buffer-local and remappable.
+  c     comment on the current line, or the visual selection
+  s     send every comment to the running agent
+  y     copy every comment to the clipboard
+  l     list comments
+  ]c    next change
+  [c    previous change
+  ?     all keys
+  q     close the review
+
+All buffer-local and remappable through require("reviewr.keymaps").set_defaults().
 
 EXPORT                                                  *reviewr-export*
 
