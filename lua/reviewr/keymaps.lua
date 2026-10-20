@@ -3,9 +3,16 @@ local M = {}
 
 M.defaults = {
   comment = "c",   -- comment on the current line or visual selection
+  edit    = "e",   -- edit the comment under the cursor
+  delete  = "d",   -- delete the comment under the cursor
   send    = "s",   -- send every comment to the running agent
   copy    = "y",   -- copy every comment to the clipboard
   panel   = "l",   -- list comments
+  nextc   = "n",   -- next comment
+  prevc   = "N",   -- previous comment
+  nextf   = "f",   -- next changed file
+  prevf   = "F",   -- previous changed file
+  refresh = "r",   -- reload the diff
   help    = "?",   -- show every key
   quit    = "q",   -- close the review
   next    = "]c",  -- next change
@@ -13,14 +20,20 @@ M.defaults = {
 }
 
 -- What each key does, in the order the footer and the help screen show them.
--- The footer shows the first entry of each pair; `?` shows all of them.
 M.legend = {
   { "c",  "comment on this line" },
+  { "e",  "edit the comment here" },
+  { "d",  "delete the comment here" },
+  { "n",  "next comment" },
+  { "N",  "previous comment" },
   { "s",  "send comments to the agent" },
   { "y",  "copy comments" },
   { "l",  "list comments" },
   { "]c", "next change" },
   { "[c", "previous change" },
+  { "f",  "next file" },
+  { "F",  "previous file" },
+  { "r",  "refresh" },
   { "?",  "all keys" },
   { "q",  "close" },
 }
@@ -33,22 +46,46 @@ end
 local function comment_here()
   local reviewr = require("reviewr")
   local ui = require("reviewr.ui")
-  local mode = vim.fn.mode()
   local startl, endl = vim.fn.line("."), vim.fn.line(".")
-  if mode == "v" or mode == "V" then
+  if vim.fn.mode():find("[vV]") then
     startl, endl = vim.fn.line("v"), vim.fn.line(".")
     if startl > endl then startl, endl = endl, startl end
   end
   vim.ui.input({ prompt = "comment: " }, function(body)
     if not body or body == "" then return end
-    local c = reviewr.add_comment({ body = body, start = startl, ["end"] = endl, bufnr = vim.api.nvim_get_current_buf() })
-    if c then
-      ui.place_sign(0, startl, "comment")
-      ui.set_extmark(0, startl, "💬  " .. body)
-      ui.refresh_status()
-      vim.notify("reviewr: comment on " .. c.file .. ":" .. startl, vim.log.levels.INFO)
+    if reviewr.add_comment({ body = body, start = startl, ["end"] = endl }) then
+      ui.redraw()
     end
   end)
+end
+
+local function edit_here()
+  local ui = require("reviewr.ui")
+  local c = ui.comment_at_cursor()
+  if not c then vim.notify("reviewr: no comment on this line", vim.log.levels.INFO); return end
+  vim.ui.input({ prompt = "comment: ", default = c.body }, function(body)
+    if not body or body == "" then return end
+    require("reviewr").edit_comment(c.id, body)
+    ui.redraw()
+  end)
+end
+
+local function delete_here()
+  local ui = require("reviewr.ui")
+  local c = ui.comment_at_cursor()
+  if not c then vim.notify("reviewr: no comment on this line", vim.log.levels.INFO); return end
+  require("reviewr").delete_comment(c.id)
+  ui.redraw()
+end
+
+local function quit()
+  local store = require("reviewr.store")
+  local n = store.count()
+  local function close() require("reviewr.ui").close_diff() end
+  if n == 0 then return close() end
+  vim.ui.select({ "keep reviewing", "close and drop " .. n .. " unsent" },
+    { prompt = n .. " unsent " .. (n == 1 and "comment" or "comments") },
+    function(choice) if choice and choice:find("^close") then close() end end)
 end
 
 local function export(target)
@@ -66,11 +103,18 @@ function M.apply(bufnr, overrides)
   local ui = require("reviewr.ui")
   local bindings = {
     { keys.comment, comment_here, { "n", "v" } },
+    { keys.edit,    edit_here },
+    { keys.delete,  delete_here },
     { keys.send,    function() export("send") end },
     { keys.copy,    function() export("clipboard") end },
     { keys.panel,   function() ui.toggle_panel() end },
+    { keys.nextc,   function() require("reviewr").jump_comment(1) end },
+    { keys.prevc,   function() require("reviewr").jump_comment(-1) end },
+    { keys.nextf,   function() local f = require("reviewr").jump_file(1); if f then vim.notify("reviewr: " .. f, vim.log.levels.INFO) end end },
+    { keys.prevf,   function() local f = require("reviewr").jump_file(-1); if f then vim.notify("reviewr: " .. f, vim.log.levels.INFO) end end },
+    { keys.refresh, function() vim.cmd("diffupdate") end },
     { keys.help,    function() ui.toggle_help(M.legend) end },
-    { keys.quit,    function() ui.close_diff() end },
+    { keys.quit,    quit },
     { keys.next,    function() vim.cmd("normal! ]c") end },
     { keys.prev,    function() vim.cmd("normal! [c") end },
   }

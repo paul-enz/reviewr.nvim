@@ -168,6 +168,55 @@ local function valid_comment(c)
   return true
 end
 
+function M.delete_comment(id)
+  local c = id and store.get(id) or nil
+  if not c then return nil, "no-comment" end
+  store.remove(id)
+  events.emit("CommentDeleted", { comment = c })
+  return c
+end
+
+function M.edit_comment(id, body)
+  local c = id and store.get(id) or nil
+  if not c then return nil, "no-comment" end
+  if not body or body == "" then return nil, "empty" end
+  store.update(id, { body = body })
+  events.emit("CommentEdited", { comment = c })
+  return c
+end
+
+function M.jump_comment(dir)
+  local here = vim.fn.line(".")
+  local ordered = store.ordered()
+  local target
+  if dir > 0 then
+    for _, c in ipairs(ordered) do
+      if (c.start or 0) > here then target = c; break end
+    end
+    target = target or ordered[1]
+  else
+    for i = #ordered, 1, -1 do
+      if (ordered[i].start or 0) < here then target = ordered[i]; break end
+    end
+    target = target or ordered[#ordered]
+  end
+  if target then vim.fn.cursor(target.start, 1) end
+  return target
+end
+
+function M.jump_file(dir)
+  local scope = scope_mod.get() or {}
+  local repo = scope.repo or root()
+  local r = git.run_sync({ "diff", "--name-only", scope.ref or "HEAD" }, { cwd = repo })
+  local files = vim.tbl_filter(function(s) return s ~= "" end, r.stdout or {})
+  if #files == 0 then return nil end
+  local cur = vim.api.nvim_buf_get_name(0)
+  local idx = 1
+  for i, f in ipairs(files) do if cur:sub(-#f) == f then idx = i; break end end
+  local nxt = ((idx - 1 + dir) % #files) + 1
+  return files[nxt]
+end
+
 function M.export(target)
   local scope = scope_mod.get() or {}
   local repo = scope.repo or root()

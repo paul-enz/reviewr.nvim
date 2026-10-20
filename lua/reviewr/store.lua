@@ -49,6 +49,16 @@ function M.remove(id)
   return c
 end
 
+-- Comments in file order, so n/N walk them the way the diff reads.
+function M.ordered(query)
+  local out = M.list(query)
+  table.sort(out, function(a, b)
+    if a.file ~= b.file then return (a.file or "") < (b.file or "") end
+    return (a.start or 0) < (b.start or 0)
+  end)
+  return out
+end
+
 function M.clear(query)
   if not query or vim.tbl_isempty(query) then
     comments = {}

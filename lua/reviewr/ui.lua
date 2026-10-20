@@ -226,7 +226,37 @@ end
 
 function M.refresh_status()
   vim.o.statusline = "%!v:lua.require('reviewr.ui').statusline()"
-  vim.cmd("redrawstatus")
+  pcall(vim.cmd, "redrawstatus")
+end
+
+function M.redraw(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(bufnr) then return end
+  M.clear_signs(bufnr)
+  M.clear_extmarks(bufnr)
+  local ok, store = pcall(require, "reviewr.store")
+  if not ok then return end
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  for _, c in ipairs(store.ordered()) do
+    local mine = c.file and (name == "" or name:sub(-#c.file) == c.file)
+    if mine and not c.orphaned then
+      M.place_sign(bufnr, c.start, "comment")
+      M.set_extmark(bufnr, c.start, "💬  " .. (c.body or ""))
+    end
+  end
+  M.refresh_status()
+end
+
+-- The comment under the cursor, if the cursor sits on its line.
+function M.comment_at_cursor()
+  local ok, store = pcall(require, "reviewr.store")
+  if not ok then return nil end
+  local lnum = vim.fn.line(".")
+  local name = vim.api.nvim_buf_get_name(0)
+  for _, c in ipairs(store.ordered()) do
+    if c.start == lnum and c.file and name:sub(-#c.file) == c.file then return c end
+  end
+  return nil
 end
 
 -- aliases for common / expected names

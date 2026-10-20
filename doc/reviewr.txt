@@ -31,13 +31,17 @@ KEYMAPS                                                 *reviewr-keymaps*
 The footer always shows the next step. `?` lists every key.
 
   c     comment on the current line, or the visual selection
+  e     edit the comment under the cursor
+  d     delete the comment under the cursor
+  n N   next / previous comment
   s     send every comment to the running agent
   y     copy every comment to the clipboard
   l     list comments
-  ]c    next change
-  [c    previous change
+  ]c [c next / previous change
+  f F   next / previous changed file
+  r     refresh the diff
   ?     all keys
-  q     close the review
+  q     close; asks first when comments are unsent
 
 All buffer-local and remappable through require("reviewr.keymaps").set_defaults().
 

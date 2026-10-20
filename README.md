@@ -61,12 +61,17 @@ The footer always shows the next step. `?` lists every key.
 | Key | Action |
 |---|---|
 | `c` | comment on the current line, or the visual selection |
+| `e` | edit the comment under the cursor |
+| `d` | delete the comment under the cursor |
+| `n` / `N` | next / previous comment |
 | `s` | send every comment to the running agent |
 | `y` | copy every comment |
 | `l` | list comments |
 | `]c` / `[c` | next / previous change |
+| `f` / `F` | next / previous changed file |
+| `r` | refresh the diff |
 | `?` | all keys |
-| `q` | close the review |
+| `q` | close; asks first when comments are unsent |
 
 All buffer-local and remappable via `require("reviewr.keymaps").set_defaults()`.
 
