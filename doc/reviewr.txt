@@ -1,0 +1,51 @@
+*reviewr.txt*  Reviewer for code reviews        *reviewr*
+
+==============================================================================
+CONTENTS                                                 *reviewr-contents*
+
+1. Intro ........................................ |reviewr-intro|
+2. UI .......................................... |reviewr-ui|
+3. Keymaps ...................................... |reviewr-keymaps|
+4. Export ....................................... |reviewr-export|
+5. Integration .................................. |reviewr-integration|
+
+INTRO                                                   *reviewr-intro*
+
+reviewr is a beautiful code-review companion with clear signs, a status line,
+and a comment gutter. Floating review panel toggles all comments.
+
+UI                                                      *reviewr-ui*
+
+Functions:
+  require("reviewr.ui").setup(opts)
+  require("reviewr.ui").open_diff(left, right, opts)
+  require("reviewr.ui").close_diff()
+  require("reviewr.ui").place_sign(bufnr, lnum, name, priority)
+  require("reviewr.ui").clear_signs(bufnr)
+  require("reviewr.ui").set_extmark(bufnr, line, text, opts)
+  require("reviewr.ui").toggle_panel(items)
+  require("reviewr.ui").statusline()
+
+KEYMAPS                                                 *reviewr-keymaps*
+
+  require("reviewr.keymaps").apply(bufnr, overrides)
+  require("reviewr.keymaps").set_defaults(tbl)
+
+Defaults are buffer-local and remappable.
+
+EXPORT                                                  *reviewr-export*
+
+  require("reviewr.export").export_all(comments, opts)
+  require("reviewr.export").build_envelope(comments, meta)
+  require("reviewr.export").to_text(comments)
+
+All-or-none clipboard/send/inbox formatting and envelope.
+
+INTEGRATION                                             *reviewr-integration*
+
+  require("reviewr.integration.diffview").available()
+  require("reviewr.integration.diffview").setup(opts)
+
+Optional adapter respecting availability.
+
+vim:tw=78:ts=8:ft=help:norl:
