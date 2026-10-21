@@ -139,11 +139,13 @@ function M.render_files_panel()
   local buf = files_panel.buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local store = require("reviewr.store")
+  local function at(b) return b and vim.api.nvim_buf_is_valid(b) and vim.b[b].reviewr_at or nil end
+  local left_at, right_at = at(state.diff.left_buf), at(state.diff.right_buf)
   local current, lines = nil, {}
   for i, f in ipairs(files_panel.files) do
     local here = f.path == state.diff.file
     if here then current = i end
-    local n = store.count({ file = f.path })
+    local n = #store.shown(f.path, "left", left_at) + #store.shown(f.path, "right", right_at)
     lines[i] = string.format("%s %s  %s%s", here and "▶" or " ", f.status, f.path, n > 0 and ("  💬 " .. n) or "")
   end
   vim.bo[buf].modifiable = true
@@ -220,7 +222,7 @@ function M.redraw(bufnr)
   local file, side = vim.b[bufnr].reviewr_file, vim.b[bufnr].reviewr_side
   if file then
     local last = vim.api.nvim_buf_line_count(bufnr)
-    for _, c in ipairs(require("reviewr.store").ordered({ file = file, side = side })) do
+    for _, c in ipairs(require("reviewr.store").shown(file, side, vim.b[bufnr].reviewr_at)) do
       local row = math.min(c.start, last) - 1
       pcall(vim.api.nvim_buf_set_extmark, bufnr, ensure_ns(), row, 0, {
         sign_text = "💬",
@@ -241,7 +243,7 @@ function M.comment_at_cursor()
   local file = vim.b.reviewr_file
   if not file then return nil end
   local lnum = vim.fn.line(".")
-  for _, c in ipairs(require("reviewr.store").ordered({ file = file, side = vim.b.reviewr_side })) do
+  for _, c in ipairs(require("reviewr.store").shown(file, vim.b.reviewr_side, vim.b.reviewr_at)) do
     if lnum >= c.start and lnum <= c["end"] then return c end
   end
   return nil
@@ -447,7 +449,7 @@ function M.winbar()
   local left = "  change " .. (name and ("│ " .. name .. " ") or "")
     .. "│ " .. n .. (n == 1 and " comment" or " comments")
     .. (agent and ("  → " .. agent.name) or "")
-  local right = M.hint(n) .. " "
+  local right = M.hint(#require("reviewr.store").unsent()) .. " "
   local width = vim.api.nvim_win_get_width(vim.g.statusline_winid or 0)
   local gap = width - vim.fn.strwidth(left) - vim.fn.strwidth(right)
   if gap < 2 then return left end

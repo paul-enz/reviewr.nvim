@@ -71,6 +71,7 @@ local function open_comment_box(existing)
   end
   local file = vim.b.reviewr_file
   local side = vim.b.reviewr_side
+  local at, source = vim.b.reviewr_at, vim.b.reviewr_source
   local origin = vim.api.nvim_get_current_win()
   local origin_buf = vim.api.nvim_get_current_buf()
   local alt = ui.alternate_win()
@@ -126,7 +127,8 @@ local function open_comment_box(existing)
         if existing then
           reviewr.edit_comment(existing.id, body)
         else
-          reviewr.add_comment({ file = file, side = side, body = body, start = startl, ["end"] = endl })
+          reviewr.add_comment({ file = file, side = side, at = at, source = source, body = body,
+            start = startl, ["end"] = endl })
         end
       end
       ui.redraw(origin_buf)
@@ -166,7 +168,7 @@ local function delete_here()
 end
 
 function M.quit()
-  local n = require("reviewr.store").count()
+  local n = #require("reviewr.store").unsent()
   local close = require("reviewr").close
   if n == 0 then return close() end
   require("reviewr.ui").confirm("Close review?",

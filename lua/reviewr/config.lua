@@ -16,6 +16,11 @@ local function validate(opts)
   if opts.log_level and not levels[opts.log_level] then
     error("reviewr: invalid log_level " .. tostring(opts.log_level))
   end
+  if opts.agents ~= nil then
+    if type(opts.agents) ~= "table" or not vim.iter(opts.agents):all(function(a) return type(a) == "string" end) then
+      error("reviewr: invalid agents " .. vim.inspect(opts.agents))
+    end
+  end
   if opts.private_ref_prefix then
     if type(opts.private_ref_prefix) ~= "string" or not opts.private_ref_prefix:match("^refs/reviewr") then
       error("reviewr: invalid private_ref_prefix " .. tostring(opts.private_ref_prefix))

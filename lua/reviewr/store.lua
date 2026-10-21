@@ -59,6 +59,18 @@ function M.ordered(query)
   return out
 end
 
+-- The comments a pane shows: on its file and side, made against the content
+-- the pane holds (at), or made without one.
+function M.shown(file, side, at)
+  return vim.tbl_filter(function(c) return c.at == nil or at == nil or c.at == at end,
+    M.ordered({ file = file, side = side }))
+end
+
+-- Comments not yet exported.
+function M.unsent()
+  return vim.tbl_filter(function(c) return not c.sent end, M.list())
+end
+
 function M.clear(query)
   if not query or vim.tbl_isempty(query) then
     comments = {}

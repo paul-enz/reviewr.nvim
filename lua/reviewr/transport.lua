@@ -3,7 +3,7 @@ local config = require("reviewr.config")
 
 local M = {}
 
-M.AGENTS = { "claude", "codex", "opencode", "aider", "goose", "cline", "pi" }
+M.AGENTS = require("reviewr.config.defaults").defaults.agents
 
 local function in_path(bin)
   return vim.fn.executable(bin) == 1
@@ -25,8 +25,13 @@ local function basename(s)
   return type(s) == "string" and vim.fn.fnamemodify(s, ":t") or nil
 end
 
+-- One of the configured agents, or the one the review is paired with (Rex's
+-- own agents list may name programs this one doesn't).
 local function is_agent(name)
-  return name ~= nil and vim.tbl_contains(M.AGENTS, name)
+  if name == nil then return false end
+  local paired = vim.g.reviewr_agent
+  return vim.tbl_contains(config.get().agents or M.AGENTS, name)
+    or (type(paired) == "table" and paired.name == name)
 end
 
 -- The agent named by a command line: its program, or the script an

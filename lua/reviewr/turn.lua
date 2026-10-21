@@ -35,6 +35,34 @@ function M.last_turn_sha(repo, scope)
   return sha, ref
 end
 
+-- Deletes baselines nothing will use again: those of worktrees that are gone
+-- and, given the terminals still open (live_blocks: block id -> true), those
+-- paired with a terminal that has closed. Only private refs are touched.
+function M.prune(repo, live_blocks)
+  local prefix = config.get().private_ref_prefix
+  local wt = git.run_sync({ "worktree", "list", "--porcelain" }, { cwd = repo })
+  if not wt.ok then return end
+  local repos = { [slug(repo)] = true }
+  for _, l in ipairs(wt.stdout) do
+    local path = l:match("^worktree (.+)$")
+    if path then repos[slug(path)] = true end
+  end
+  local blocks
+  if live_blocks then
+    blocks = {}
+    for id in pairs(live_blocks) do blocks[slug(id)] = true end
+  end
+  local refs = git.run_sync({ "for-each-ref", "--format=%(refname)", prefix }, { cwd = repo })
+  for _, ref in ipairs(refs.stdout) do
+    local r, name = ref:sub(#prefix + 2):match("^([^/]+)/(.+)$")
+    local block = name and name:match("^turn%-(.+)$")
+    if r and (not repos[r] or (blocks and block and not blocks[block])) then
+      git.run_sync({ "update-ref", "-d", ref }, { cwd = repo })
+      log.info("turn: pruned " .. ref)
+    end
+  end
+end
+
 function M.mark_turn(opts)
   opts = opts or {}
   local repo = opts.repo or scope_mod.repo() or git.git_root(vim.fn.getcwd()) or vim.fn.getcwd()

@@ -37,6 +37,9 @@ local function turn_scope()
   return { name = a and ("turn-" .. a.block) or "turn" }
 end
 
+-- repos whose stale baselines were pruned this session
+local pruned = {}
+
 local ACTIVE = { working = true, blocked = true }
 local watch_repo
 
@@ -210,6 +213,8 @@ function M.open_file(path)
   for _, f in ipairs(s.files) do if f.path == path then old = f.old; break end end
   local left = buf_from_ref(s.repo, s.base_ref, path, "left", old)
   local right = buf_from_ref(s.repo, s.head_ref, path, "right")
+  vim.b[left].reviewr_at, vim.b[right].reviewr_at = s.left_at, s.right_at
+  vim.b[left].reviewr_source = old
   ui.show_file(left, right, path)
   local km = config_mod.get().keymaps
   if km then
@@ -223,12 +228,21 @@ function M.open_file(path)
   return true
 end
 
+-- What a pane shows, as comments record it: a commit (or tree) id, the index
+-- or the working tree.
+local function content_at(repo, ref)
+  if ref == nil then return "working tree" end
+  if ref == ":" then return "index" end
+  return git.rev_parse(ref, repo) or ref
+end
+
 -- Loads the session's file list (or takes `files`, already read) and shows
 -- `prefer` (or the first file). keep_view: reloading the file in view keeps
 -- both panes where they were.
 local function load(prefer, files, keep_view)
   local s = state.get()
   s.files = files or changed_files(s.repo, s.base_ref, s.head_ref)
+  s.left_at, s.right_at = content_at(s.repo, s.base_ref), content_at(s.repo, s.head_ref)
   if #s.files == 0 then
     vim.notify("reviewr: no changes found", vim.log.levels.INFO)
     return false
@@ -273,6 +287,19 @@ local function start(repo, base_ref, head_ref, scope_name, label)
   local s = state.ensure()
   s.repo, s.base_ref, s.head_ref, s.scope = repo, base_ref, head_ref, scope_mod.get()
   if not load(prefer, files) then return false end
+  if not pruned[repo] then
+    pruned[repo] = true
+    local live
+    if require("reviewr.rex").available() then
+      local terms = require("reviewr.rex").terminals()
+      -- an empty list may mean Rex didn't answer: keep every paired baseline
+      if #terms > 0 then
+        live = {}
+        for _, t in ipairs(terms) do live[t.block_id] = true end
+      end
+    end
+    turn.prune(repo, live)
+  end
   local trigger = baseline_trigger()
   if trigger == "open" or (trigger == "agent" and not turn.last_turn_sha(repo, turn_scope())) then
     turn.mark_turn({ repo = repo, scope = turn_scope() })
@@ -373,6 +400,8 @@ function M.add_comment(input)
     scope = scope.name,
     file = file,
     side = input.side or vim.b.reviewr_side or "right",
+    at = input.at or (not input.file and vim.b.reviewr_at) or nil,
+    source = input.source or (not input.file and vim.b.reviewr_source) or nil,
     start = startl,
     ["end"] = input["end"] or startl,
     body = input.body or "",
@@ -415,14 +444,14 @@ function M.edit_comment(id, body)
   local c = id and store.get(id) or nil
   if not c then return nil, "no-comment" end
   if not body or body == "" then return nil, "empty" end
-  store.update(id, { body = body })
+  store.update(id, { body = body, sent = false })
   events.emit("CommentEdited", { comment = c })
   return c
 end
 
 function M.jump_comment(dir)
   local here = vim.fn.line(".")
-  local ordered = store.ordered({ file = vim.b.reviewr_file, side = vim.b.reviewr_side })
+  local ordered = store.shown(vim.b.reviewr_file, vim.b.reviewr_side, vim.b.reviewr_at)
   local target
   if dir > 0 then
     for _, c in ipairs(ordered) do
@@ -450,6 +479,15 @@ function M.jump_file(dir)
   return nxt
 end
 
+-- The side, and the content it showed: "left, commit 1a2b3c4d5e6f",
+-- "right, working tree".
+local function where(c)
+  if not c.at then return c.side end
+  if c.at == "working tree" or c.at == "index" then return c.side .. ", " .. c.at end
+  if c.at == EMPTY_TREE then return c.side .. ", empty" end
+  return c.side .. ", commit " .. c.at:sub(1, 12)
+end
+
 local function envelope(repo, comments)
   local files = {}
   for _, c in ipairs(comments) do
@@ -465,7 +503,7 @@ local function envelope(repo, comments)
   if #comments == 1 then table.insert(lines, "range: " .. comments[1].start .. "-" .. comments[1]["end"]) end
   vim.list_extend(lines, { "created: " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), "format: markdown", "---" })
   for _, c in ipairs(comments) do
-    table.insert(lines, string.format("### %s:%d-%d (%s)", c.file, c.start, c["end"], c.side))
+    table.insert(lines, string.format("### %s:%d-%d (%s)", c.source or c.file, c.start, c["end"], where(c)))
     table.insert(lines, c.body)
     table.insert(lines, "")
   end
@@ -501,6 +539,7 @@ function M.export(target, cb, opts)
   local function delivered(tname, label, cand)
     if not tname then return finish(false, label) end
     if cand then watch_repo = repo; watch_agent(cand) end
+    for _, c in ipairs(comments) do c.sent = true end
     events.emit("Exported", { target = tname, label = label, count = #comments })
     return finish(true, #comments, label)
   end

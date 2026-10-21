@@ -15,11 +15,11 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 - A review tab of its own: side-by-side native Vim diff (`]c`/`[c`, folds) over a **changed-files panel** along the bottom, like an octo.nvim review
 - Scopes: uncommitted, staged, branch (everything on the branch, committed or not, against its merge base with the default branch), and **turn** — what changed since the last turn baseline
 - Diffs cover files git tracks: commits, edits to tracked files, and new files once `git add`ed; untracked files are left out
-- Line comments on a line or range, anchored by identity (file, side, start, end) — never row index
-- In-memory comment store by design (ephemeral; close drops unsent comments)
+- Line comments on a line or range, anchored by identity (file, side, start, end) — never row index; each records the content its side showed (a commit, the index or the working tree) and shows only in views of that content
+- In-memory comment store by design (ephemeral; close drops them, and asks first while any is unsent)
 - All-or-none export: clipboard, agent send, or filesystem inbox
 - Mux-agnostic send to a running agent: Neovim `:terminal` → tmux → Rex → WezTerm → inbox → clipboard
-- Private `refs/reviewr/*` baselines only; never mutates worktree/index/branches
+- Private `refs/reviewr/*` baselines only; never mutates worktree/index/branches. Baselines of removed worktrees, and in Rex of closed terminals, are pruned when a review opens
 - Configurable keymaps, events (`User Reviewr…`), leveled logging
 - Runs from the shell: `nvim -d …` or `:ReviewrOpen`
 
@@ -121,7 +121,7 @@ The bar above the change pane always shows the next step. `?` lists every key.
 | `gc` | pick a commit and review just that commit |
 | `gb` | pick the base branch for the branch view |
 | `?` | all keys |
-| `q` | close. With unsent comments it asks once: Enter closes, Right then Enter or Esc keeps reviewing. A review cmd+r opened closes its pane too |
+| `q` | close. With unsent comments (new, or edited since the last send or copy) it asks once: Enter closes, Right then Enter or Esc keeps reviewing. A review cmd+r opened closes its pane too |
 
 In the changed-files panel, `<CR>` opens the file under the cursor and `q` closes the review.
 
@@ -131,7 +131,7 @@ All buffer-local and remappable through the `keymaps` option or `require("review
 
 ## Agents
 
-`s` pastes the review into a running agent (`claude`, `codex`, `opencode`, `aider`, `goose`, `cline`, `pi`). It looks in:
+`s` pastes the review into a running agent (`claude`, `codex`, `opencode`, `aider`, `goose`, `cline`, `pi`, or the programs the `agents` option names; a review paired with an agent always recognises it). It looks in:
 
 1. Neovim `:terminal`s whose processes include an agent;
 2. tmux panes in the repo running an agent (inside tmux);
@@ -154,11 +154,13 @@ range: 42-88               (only for a single comment)
 created: ISO8601
 format: markdown
 ---
-### path/relative:42-88 (right)
+### path/relative:42-88 (right, working tree)
 <comment>
 
 @@REVIEW_END
 ```
+
+Each heading names the side and the content it showed: `working tree`, `index`, or `commit <sha>` (read it with `git show <sha>:<path>`; a left-side comment on a renamed file names the old path). Every export carries every comment; one that succeeds marks them sent, so closing no longer asks about them.
 
 Default delivery is **queue** (pasted into the agent input, no Enter); set `send_mode = "submit"` to also submit. Filesystem inbox writes the same envelope to `<repo>/.reviewr/inbox/`, which git ignores.
 
@@ -174,6 +176,7 @@ require("reviewr").setup({
   private_ref_prefix = "refs/reviewr",
   keymaps = true,              -- false, or a table such as { send = "S" }
   adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
+  agents = { "claude", "codex", "opencode", "aider", "goose", "cline", "pi" }, -- programs that count as agents
 })
 ```
 

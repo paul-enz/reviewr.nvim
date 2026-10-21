@@ -101,15 +101,17 @@ source: reviewr.nvim
 repo: /abs/path
 ...
 ---
-### path/to/file.lua:42-48 (right)
+### path/to/file.lua:42-48 (right, working tree)
 comment text
 
-### other.lua:7-7 (left)
+### other.lua:7-7 (left, commit 1a2b3c4d5e6f)
 comment text
 @@REVIEW_END
 ```
 
 Each `###` heading is one comment: the file relative to `repo`, the line range,
-and the side. `right` lines number the change (the head or working tree);
-`left` lines number the base, so read `git show <base>:<file>` to see what they
-point at. Address every comment, or say why one shouldn't be acted on.
+the side, and the content that side showed. `working tree` lines number the
+file as it is on disk now (it may have moved on since), `index` the staged
+version, and `commit <sha>` the file at that commit: read
+`git show <sha>:<file>` to see what the lines point at. A left-side comment on
+a renamed file names the old path. Address every comment, or say why one shouldn't be acted on.

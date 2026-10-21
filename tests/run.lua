@@ -127,7 +127,9 @@ test("export copies every comment, naming the file only when there is one", func
   local ok, n, dest = reviewr.export("clipboard")
   eq({ ok, n, dest }, { true, 1, "clipboard" })
   local text = vim.fn.getreg("+")
-  assert(text:find("\nfile: g.lua\n", 1, true) and text:find("### g.lua:2-2 (right)\nwhy uppercase", 1, true), text)
+  local feat = vim.trim(git("rev-parse feature")):sub(1, 12)
+  assert(text:find("\nfile: g.lua\n", 1, true)
+    and text:find("### g.lua:2-2 (right, commit " .. feat .. ")\nwhy uppercase", 1, true), text)
   reviewr.add_comment({ file = "f.txt", side = "left", start = 2, body = "second" })
   reviewr.export("clipboard")
   assert(not vim.fn.getreg("+"):find("\nfile:", 1, true), "file header with two files")
@@ -163,6 +165,22 @@ test("send pastes into a terminal running an agent", function()
   local cands = transport.detect(repo)
   eq(#cands, 1)
   eq(cands[1].transport, "neovim-terminal")
+  vim.cmd("bwipeout!")
+end)
+
+test("the agents option names which programs count; a paired agent always does", function()
+  local bin = vim.fn.tempname()
+  vim.fn.mkdir(bin, "p")
+  sh("ln -s /bin/cat " .. bin .. "/myagent")
+  vim.cmd("tabnew | terminal " .. bin .. "/myagent")
+  vim.wait(500)
+  eq(#transport.detect(repo), 0, "not an agent by default")
+  require("reviewr.config").merge({ agents = { "myagent" }, adapters = { "neovim-terminal", "filesystem-inbox" } })
+  eq(#transport.detect(repo), 1, "configured")
+  require("reviewr.config").merge({ adapters = { "neovim-terminal", "filesystem-inbox" } })
+  vim.g.reviewr_agent = { session = "session:t", block = "block:A", name = "myagent" }
+  eq(#transport.detect(repo), 1, "paired")
+  vim.g.reviewr_agent = nil
   vim.cmd("bwipeout!")
 end)
 
@@ -520,6 +538,144 @@ test("renames, non-ASCII paths, binary and CRLF files open with their real conte
   vim.cmd("cd " .. repo)
   assert(reviewr.open({ "master" }))
   vim.fn.delete(other, "rf")
+end)
+
+test("a comment names the content it was made on and shows only where that content is", function()
+  store.clear()
+  assert(reviewr.open({ "master" }))
+  reviewr.open_file("g.lua")
+  local d = ui.panes()
+  vim.api.nvim_set_current_win(d.left_win)
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+  vim.cmd("ReviewrComment on the merge base")
+  vim.api.nvim_set_current_win(d.right_win)
+  vim.cmd("ReviewrComment on the working tree")
+  local base = vim.trim(git("merge-base master HEAD"))
+  local _, _, _ = reviewr.export("clipboard")
+  local text = vim.fn.getreg("+")
+  assert(text:find("### g.lua:2-2 (left, commit " .. base:sub(1, 12) .. ")", 1, true), text)
+  assert(text:find("### g.lua:1-1 (right, working tree)", 1, true), text)
+  eq(git("show " .. base:sub(1, 12) .. ":g.lua"), "one\ntwo\nthree\n", "the named commit resolves")
+  write(repo .. "/g.lua", { "one", "two", "edited" })
+  git("commit -qam 'move HEAD'")
+  assert(reviewr.set_scope("uncommitted") == nil, "nothing uncommitted")
+  write(repo .. "/g.lua", { "one", "two", "edited again" })
+  assert(reviewr.set_scope("uncommitted"))
+  eq({ marks(ui.panes().left_buf), marks(ui.panes().right_buf) }, { 0, 1 }, "the base comment stays with its base")
+  eq(panel_lines(), { "▶ M  g.lua  💬 1" })
+  git("checkout -q -- . && git -C " .. repo .. " reset -q --hard HEAD~1")
+  store.clear()
+end)
+
+test("a left comment on a renamed file names the old path", function()
+  git("mv g.lua h.lua")
+  assert(reviewr.set_scope("uncommitted"))
+  eq(panel_lines(), { "▶ R  h.lua" })
+  vim.api.nvim_set_current_win(ui.panes().left_win)
+  vim.cmd("ReviewrComment old name")
+  reviewr.export("clipboard")
+  assert(vim.fn.getreg("+"):find("### g.lua:1-1 (left, commit ", 1, true), vim.fn.getreg("+"))
+  git("mv h.lua g.lua")
+  store.clear()
+end)
+
+test("sent comments don't hold up closing; an edited one does again", function()
+  assert(reviewr.open({ "master" }))
+  local c = reviewr.add_comment({ file = "g.lua", start = 1, body = "will be sent" })
+  eq(ui.hint(#store.unsent()), "s  send to agent    y  copy    ?  all keys")
+  assert(reviewr.export("clipboard"))
+  eq(#store.unsent(), 0)
+  reviewr.edit_comment(c.id, "changed after sending")
+  eq(#store.unsent(), 1, "edited")
+  assert(reviewr.export("clipboard"))
+  require("reviewr.keymaps").quit()
+  assert(not ui.is_open(), "closed without asking")
+  assert(reviewr.open({ "master" }))
+end)
+
+test("baselines of closed terminals and removed worktrees are pruned; live ones stay", function()
+  local turn = require("reviewr.turn")
+  local head = vim.trim(git("rev-parse HEAD"))
+  local wt = vim.fn.resolve(vim.fn.tempname())
+  git("worktree add -q " .. wt)
+  wt = vim.trim(sh("git -C " .. wt .. " rev-parse --show-toplevel"))
+  local function ref(r, name) return "refs/reviewr/" .. r:gsub("[^%w%._-]", "_") .. "/" .. name end
+  for _, r in ipairs({ ref(repo, "turn"), ref(repo, "turn-block_live"), ref(repo, "turn-block_gone"),
+    ref(wt, "turn"), ref("/no/such/worktree", "turn") }) do
+    git("update-ref " .. r .. " " .. head)
+  end
+  turn.prune(repo, { ["block:live"] = true })
+  local left = vim.split(vim.trim(git("for-each-ref '--format=%(refname)' refs/reviewr")), "\n")
+  for _, r in ipairs({ ref(repo, "turn"), ref(repo, "turn-block_live"), ref(wt, "turn") }) do
+    assert(vim.tbl_contains(left, r), r .. " kept")
+  end
+  for _, r in ipairs({ ref(repo, "turn-block_gone"), ref("/no/such/worktree", "turn") }) do
+    assert(not vim.tbl_contains(left, r), r .. " pruned")
+  end
+  turn.prune(repo, nil)
+  assert(git("for-each-ref refs/reviewr"):find("turn-block_live", 1, true), "unknown terminals: paired kept")
+  git("worktree remove --force " .. wt)
+end)
+
+-- cmd+r, driven through a stand-in for Rex's Lua API.
+local function rex_toggle(blocks, foregrounds, focused)
+  local calls = {}
+  _G.rex = {
+    session_id = "session:s",
+    block_id = focused,
+    call = function(method, params)
+      table.insert(calls, { method = method, params = params })
+      if method == "session.list_blocks" then return { blocks = blocks } end
+      if method == "block.method" then return { foreground = foregrounds[params.block_id] or {} } end
+      return {}
+    end,
+    exec = function(cmd) return cmd[3] .. "\n", "", 0 end,
+  }
+  local mod = dofile(plugin .. "/rex/reviewr/init.lua")
+  mod.toggle({})
+  _G.rex = nil
+  return vim.tbl_filter(function(c) return c.method ~= "session.list_blocks" and c.method ~= "block.method" end, calls)
+end
+
+test("cmd+r in a review hides it", function()
+  local calls = rex_toggle({ { block_id = "block:R", label = "review:block:A", placement = "placed" } }, {}, "block:R")
+  eq(#calls, 1)
+  eq({ calls[1].method, calls[1].params.block_id }, { "session.detach_block", "block:R" })
+end)
+
+test("cmd+r in an agent's terminal opens a review paired with it, then hides and shows that one", function()
+  local fg = { ["block:A"] = { argv0 = "codex", cwd = "/repo" } }
+  local calls = rex_toggle({ { block_id = "block:A", window_id = "w" } }, fg, "block:A")
+  eq(calls[1].method, "session.new_split")
+  local block = calls[1].params.layout.block
+  eq(block.label, "review:block:A")
+  eq(block.options.cwd, "/repo")
+  local command = table.concat(block.options.command, " ")
+  assert(command:find("vim.g.reviewr_standalone = true", 1, true), command)
+  assert(command:find('block = "block:A", name = "codex"', 1, true), command)
+  calls = rex_toggle({ { block_id = "block:A" }, { block_id = "block:R", label = "review:block:A", placement = "placed" } },
+    fg, "block:A")
+  eq({ calls[1].method, calls[1].params.block_id }, { "session.detach_block", "block:R" })
+  calls = rex_toggle({ { block_id = "block:A" }, { block_id = "block:R", label = "review:block:A", placement = "detached" } },
+    fg, "block:A")
+  eq(vim.tbl_map(function(c) return c.method end, calls), { "session.move_block", "session.focus_block" })
+  eq(calls[1].params.anchor_block_id, "block:A")
+end)
+
+test("cmd+r elsewhere keeps one unpaired review per repository per window", function()
+  local fg = { ["block:T"] = { argv0 = "fish", cwd = "/repo" }, ["block:U"] = { cwd = "/repo" },
+    ["block:V"] = { cwd = "/other" } }
+  local calls = rex_toggle({ { block_id = "block:T", window_id = "w" },
+    { block_id = "block:U", label = "review", placement = "placed", window_id = "w" } }, fg, "block:T")
+  eq({ calls[1].method, calls[1].params.block_id }, { "session.detach_block", "block:U" })
+  calls = rex_toggle({ { block_id = "block:T", window_id = "w" },
+    { block_id = "block:V", label = "review", placement = "detached" },
+    { block_id = "block:U", label = "review", placement = "detached" } }, fg, "block:T")
+  eq({ calls[1].method, calls[1].params.block_id }, { "session.move_block", "block:U" })
+  calls = rex_toggle({ { block_id = "block:T", window_id = "w" },
+    { block_id = "block:V", label = "review", placement = "detached" } }, fg, "block:T")
+  eq(calls[1].method, "session.new_split")
+  eq(calls[1].params.layout.block.label, "review")
 end)
 
 test("close drops comments and the review tab, even as the only tab", function()

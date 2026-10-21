@@ -15,6 +15,8 @@ M.defaults = {
   },
   keymaps = true, -- false to skip, or a table of key overrides
   adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
+  -- programs that count as agents, matched by executable name
+  agents = { "claude", "codex", "opencode", "aider", "goose", "cline", "pi" },
 }
 
 return M

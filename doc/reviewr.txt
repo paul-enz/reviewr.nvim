@@ -13,7 +13,9 @@ INTRO                                                   *reviewr-intro*
 
 A review opens in a tab of its own: the base on the left, the change on the
 right, and every changed file listed along the bottom. Comments sit on lines
-or ranges of either side and live in memory until they are sent.
+or ranges of either side and live in memory until the review closes. Each
+records the content its side showed (a commit, the index or the working
+tree) and shows only in views of that content.
 
 COMMANDS                                                *reviewr-commands*
 
@@ -56,7 +58,8 @@ In the diff panes:
   gc    pick a commit and review just that commit
   gb    pick the base branch for the branch view
   ?     all keys
-  q     close. With unsent comments it asks once: <CR> closes, <Right> then
+  q     close. With unsent comments (new, or edited since the last send or
+        copy) it asks once: <CR> closes, <Right> then
         <CR> or <Esc> keeps reviewing. A review that cmd+r
         opened in Rex quits its Neovim, closing the pane
 
@@ -73,6 +76,10 @@ terminals of other sessions must work in the repository. With several
 agents, a picker lists them by terminal title. With none it writes
 <repo>/.reviewr/inbox/, and failing that copies to the clipboard. After
 sending, the agent's terminal comes forward.
+
+Programs count as agents by the `agents` option. Each comment's heading in
+the review names its side and content: `(left, commit <sha>)`,
+`(right, working tree)` or `(right, index)`.
 
 A review opened with cmd+r in an agent's Rex terminal is paired with that
 agent: s sends to it, and only its turns move the review's own turn baseline.
@@ -93,6 +100,7 @@ CONFIGURATION                                           *reviewr-config*
     send_mode = "queue",         -- queue | submit
     keymaps = true,              -- false, or a table such as { send = "S" }
     adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
+    agents = { "claude", "codex", "opencode", "aider", "goose", "cline", "pi" },
   })
 <
 
