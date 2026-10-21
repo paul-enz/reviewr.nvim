@@ -26,16 +26,23 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 - git
 - Optional: `plenary.nvim` for async jobs
 
-## Install (lazy.nvim)
+## Install
+
+Point your coding agent at this repository and ask it to install reviewr.nvim. [INSTALL.md](INSTALL.md) is written for agents: it adds the plugin to Neovim, installs the agent skill (`skills/reviewr-nvim`) so the agent can open reviews for you and act on the comments, and sets up the Rex key binding when you use Rex.
+
+By hand, with lazy.nvim:
 
 ```lua
 {
   "paul-enz/reviewr.nvim",
-  config = function()
-    require("reviewr").setup({})
-  end,
+  cmd = { "ReviewrOpen", "ReviewrScope", "ReviewrComment", "ReviewrTurn", "ReviewrExport", "ReviewrClear" },
+  opts = {},
 }
 ```
+
+## Rex
+
+`rex/reviewr` is a Rex config module. Linked into `~/.config/rex/reviewr` and enabled with `require("reviewr").setup()` in `~/.config/rex/init.lua`, it binds cmd+r: a review of the focused terminal's current branch, against the default branch, opens in a split to its right. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
 
 ## Shell usage
 
