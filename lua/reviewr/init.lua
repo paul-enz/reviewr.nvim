@@ -12,6 +12,44 @@ local setup_done = false
 
 local SCOPES = { "uncommitted", "staged", "branch", "turn" }
 
+-- open: mark the turn baseline whenever a review opens; agent: when a
+-- watched agent starts working; auto: agent inside Rex, else open
+local function baseline_trigger()
+  local t = config_mod.get().baseline_trigger
+  if t == "auto" then return require("reviewr.rex").available() and "agent" or "open" end
+  return t
+end
+
+local ACTIVE = { working = true, blocked = true }
+local watch_repo
+
+-- A watched agent's turn starts when it leaves idle for work, and ends when
+-- it stops working or waiting on the user.
+local function on_agent(new, old, label)
+  if ACTIVE[new] and not ACTIVE[old] then
+    if baseline_trigger() == "agent" and watch_repo then
+      turn.mark_turn({ repo = watch_repo, scope = { name = "turn" } })
+    end
+  elseif ACTIVE[old] and not ACTIVE[new] then
+    local ui = require("reviewr.ui")
+    if config_mod.get().refresh_on_agent and ui.is_open() then
+      local here = vim.api.nvim_get_current_tabpage()
+      ui.focus_tab()
+      M.refresh()
+      if vim.api.nvim_tabpage_is_valid(here) then vim.api.nvim_set_current_tabpage(here) end
+      vim.notify("reviewr: " .. label .. " finished; review refreshed", vim.log.levels.INFO)
+    end
+  end
+end
+
+local function watch_agent(cand)
+  local rex = require("reviewr.rex")
+  if cand.transport ~= "rex" or rex.watching(cand.id) then return end
+  rex.watch(cand.meta.session, cand.id, { state = cand.state, label = cand.label, cb = on_agent })
+end
+
+M._on_agent = on_agent
+
 local function root()
   return git.git_root(vim.fn.getcwd()) or vim.fn.getcwd()
 end
@@ -166,7 +204,16 @@ local function start(repo, base_ref, head_ref, scope_name)
   local s = state.ensure()
   s.repo, s.base_ref, s.head_ref, s.scope = repo, base_ref, head_ref, scope_mod.get()
   if not load(prefer) then return false end
-  if config_mod.get().baseline_trigger == "open" then turn.mark_turn({ repo = repo, scope = { name = "turn" } }) end
+  local trigger = baseline_trigger()
+  if trigger == "open" or (trigger == "agent" and not turn.last_turn_sha(repo, { name = "turn" })) then
+    turn.mark_turn({ repo = repo, scope = { name = "turn" } })
+  end
+  if require("reviewr.rex").available() then
+    watch_repo = repo
+    for _, c in ipairs(require("reviewr.transport").rex_candidates(repo)) do
+      if c.conf > 0.6 then watch_agent(c) end
+    end
+  end
   events.emit("Opened", { repo = repo, scope = scope_mod.get(), file = ui.panes().file, files = s.files })
   log.info("opened " .. repo .. " (" .. #s.files .. " files)")
   return true
@@ -219,7 +266,7 @@ function M.add_comment(input)
     ["end"] = input["end"] or startl,
     body = input.body or "",
   })
-  if config_mod.get().baseline_trigger == "first_comment" and not turn.last_turn_sha(repo, { name = "turn" }) then
+  if baseline_trigger() == "first_comment" and not turn.last_turn_sha(repo, { name = "turn" }) then
     turn.mark_turn({ repo = repo, scope = { name = "turn" } })
   end
   events.emit("CommentAdded", { comment = comment })
@@ -338,8 +385,9 @@ function M.export(target, cb)
     end
   end
   local text = envelope(repo, comments)
-  local function delivered(tname, label)
+  local function delivered(tname, label, cand)
     if not tname then return finish(false, label) end
+    if cand then watch_repo = repo; watch_agent(cand) end
     events.emit("Exported", { target = tname, label = label, count = #comments })
     return finish(true, #comments, label)
   end
@@ -349,7 +397,7 @@ function M.export(target, cb)
   elseif target == "inbox" or target == "filesystem-inbox" then
     transport.send(text, { repo = repo, inbox_only = true }, delivered)
   else
-    vim.fn.setreg("+", text)
+    require("reviewr.clipboard").copy(text)
     delivered("clipboard", "clipboard")
   end
   if result then return unpack(result) end
@@ -365,6 +413,7 @@ end
 
 function M.close()
   store.clear()
+  require("reviewr.rex").unwatch_all()
   require("reviewr.ui").close_diff()
 end
 

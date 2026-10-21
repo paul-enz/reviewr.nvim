@@ -56,11 +56,20 @@ The integration binds cmd+r to open a review of the focused terminal's branch
 ln -s "$plugin/rex/reviewr" ~/.config/rex/reviewr
 ```
 
-Add to `~/.config/rex/init.lua`, after any existing `require` lines:
+Add to `~/.config/rex/init.lua`, after any existing `require` lines, guarded:
 
 ```lua
-require("reviewr").setup()   -- or setup({ key = "ctrl+a>r" }) to pick another key
+do
+  local ok, reviewr = pcall(require, "reviewr")
+  if ok then reviewr.setup() end   -- or setup({ key = "ctrl+a>r" }) to pick another key
+end
 ```
+
+Keep the `pcall`. Rex skips a bad `rex.*` call but stops loading the file at a
+Lua error, and a `require` of a module that is gone (the plugin removed, the
+link broken) is one: every binding after it would be lost. If the user's
+config has other unguarded `require` lines, point this out and offer to guard
+them the same way.
 
 Check the key is free first (`rex keymap`), then `rex config check` and
 `rex config reload`. `rex keymap` should list the key with source

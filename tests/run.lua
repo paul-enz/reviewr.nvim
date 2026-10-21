@@ -164,6 +164,7 @@ test("send asks which agent when there are several", function()
   vim.wait(500)
   store.clear()
   reviewr.add_comment({ file = "f.txt", start = 1, body = "pick me" })
+  vim.cmd("tabfirst")
   local offered
   local select = vim.ui.select
   vim.ui.select = function(items, opts, cb)
@@ -174,6 +175,7 @@ test("send asks which agent when there are several", function()
   vim.ui.select = select
   eq(#offered, 2)
   eq({ ok, n, dest }, { true, 1, "aider (nvim terminal)" })
+  eq(vim.bo.channel, chan, "focus moves to the agent")
   store.clear()
   vim.cmd("bwipeout! | bwipeout!")
 end)
@@ -209,6 +211,39 @@ test("branch scope compares the default branch's merge base with HEAD", function
   assert(reviewr.set_scope("branch"))
   eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files), { "added.md", "f.txt", "g.lua", "gone.txt" })
   eq(ui.panes().file, "g.lua", "keeps the file in view")
+end)
+
+test("a watched agent's turn sets the baseline when it starts and refreshes the review when it ends", function()
+  local rex = require("reviewr.rex")
+  require("reviewr.config").merge({ baseline_trigger = "agent", adapters = { "neovim-terminal", "filesystem-inbox" } })
+  git("checkout -q -- . && git -C " .. repo .. " clean -qfd")
+  write(repo .. "/f.txt", { "before the turn" })
+  assert(reviewr.set_scope("uncommitted"))
+  local function status(state)
+    rex.handle_event(vim.json.encode({ type = "session_event", payload = { event = { type = "block_event", payload = {
+      block_id = "block:agent", name = "program_status_changed", payload = { id = "", record = { state = state } },
+    } } } }))
+  end
+  rex.watch("session:none", "block:agent", { state = "idle", label = "claude", cb = reviewr._on_agent })
+  status("working")
+  write(repo .. "/g.lua", { "written by the agent" })
+  status("blocked")
+  eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files), { "f.txt" }, "no refresh while busy")
+  status("idle")
+  eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files), { "f.txt", "g.lua" }, "refreshed")
+  assert(reviewr.set_scope("turn"))
+  eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files), { "g.lua" }, "turn shows only the agent's edit")
+  rex.unwatch_all()
+end)
+
+test("copying in Rex also sends OSC 52, so a remote Neovim reaches the local clipboard", function()
+  local sent
+  package.loaded["vim.ui.clipboard.osc52"] = { copy = function() return function(lines) sent = lines end end }
+  vim.env.REX_SESSION = "session:test"
+  require("reviewr.clipboard").copy("a\nb")
+  vim.env.REX_SESSION = nil
+  package.loaded["vim.ui.clipboard.osc52"] = nil
+  eq(sent, { "a", "b" })
 end)
 
 test("close drops comments and the review tab, even as the only tab", function()

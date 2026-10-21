@@ -28,7 +28,12 @@ nvim --headless -c 'lua io.stdout:write(tostring(pcall(require, "reviewr")) .. "
 | `feature` against `main` | `ReviewrOpen main feature` |
 | uncommitted changes | `ReviewrOpen` |
 | what is staged | `ReviewrScope staged` |
-| what changed since the last turn baseline | `ReviewrScope turn` |
+| what you (or another agent) changed in your last turn | `ReviewrScope turn` |
+
+In Rex the plugin watches the agents it can see: when one starts working, it
+snapshots the turn baseline, and when it stops, the open review reloads. So
+after you finish addressing a review, `ReviewrScope turn` in the user's open
+review shows exactly your changes; suggest it rather than a branch diff.
 
 `ReviewrOpen {base} {head}` diffs `head` against its merge base with `base`, the
 way a pull request does, so commits that landed on `base` later don't show.

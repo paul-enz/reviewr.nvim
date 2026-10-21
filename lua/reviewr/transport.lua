@@ -94,36 +94,26 @@ end
 
 -- Every agent in Neovim's own Rex session, wherever it works, and agents in
 -- other sessions that work in the repo.
-local function rex_candidates(repo_root)
-  local listing = run_json({ "rex", "ls", "--json" })
-  if not listing then return {} end
+function M.rex_candidates(repo_root)
   local cands = {}
-  for _, sess in ipairs(listing.sessions or {}) do
-    local own = sess.session_id == vim.env.REX_SESSION
-    local blocks = (run_json({ "rex", "block", "ls", "-s", sess.session_id, "--json" }) or {}).blocks or {}
-    for _, b in ipairs(blocks) do
-      if b.block_id ~= vim.env.REX_BLOCK then
-        local function call(method)
-          return run_json({ "rex", "block", "call", "-s", sess.session_id, "-b", b.block_id, method, "{}" }) or {}
-        end
-        local fg = call("process").foreground or {}
-        local name
-        for _, n in ipairs({ fg.argv0, fg.name, fg.invoked_path }) do
-          if is_agent(basename(n)) then name = basename(n); break end
-        end
-        local here = in_repo(fg.cwd, repo_root)
-        if name and (own or here) then
-          local title = call("title").title
-          table.insert(cands, {
-            id = b.block_id,
-            transport = "rex",
-            label = string.format("%s — %s (%s)", name, (title and title ~= "") and title or b.label or b.block_id,
-              sess.label or sess.session_id),
-            conf = here and (own and 0.88 or 0.86) or 0.6,
-            meta = { session = sess.session_id },
-          })
-        end
-      end
+  for _, t in ipairs(require("reviewr.rex").terminals()) do
+    local fg = t.foreground or {}
+    local name
+    for _, n in ipairs({ fg.argv0, fg.name, fg.invoked_path }) do
+      if is_agent(basename(n)) then name = basename(n); break end
+    end
+    local own = t.session_id == vim.env.REX_SESSION
+    local here = in_repo(fg.cwd, repo_root)
+    if name and t.block_id ~= vim.env.REX_BLOCK and (own or here) then
+      local title = (t.title and t.title ~= "") and t.title or t.block_label or t.block_id
+      table.insert(cands, {
+        id = t.block_id,
+        transport = "rex",
+        label = string.format("%s — %s (%s)", name, title, t.session_label or t.session_id),
+        conf = here and (own and 0.88 or 0.86) or 0.6,
+        state = t.state,
+        meta = { session = t.session_id },
+      })
     end
   end
   return cands
@@ -150,7 +140,7 @@ function M.detect(repo_root)
   local cands = {}
   vim.list_extend(cands, nvim_terminal_candidates())
   if vim.env.TMUX and in_path("tmux") then vim.list_extend(cands, tmux_candidates(repo_root)) end
-  if vim.env.REX_SESSION and in_path("rex") then vim.list_extend(cands, rex_candidates(repo_root)) end
+  if require("reviewr.rex").available() then vim.list_extend(cands, M.rex_candidates(repo_root)) end
   if (vim.env.WEZTERM_UNIX_SOCKET or vim.env.WEZTERM_PANE) and in_path("wezterm") then
     vim.list_extend(cands, wezterm_candidates(repo_root))
   end
@@ -160,28 +150,51 @@ end
 
 -- ---------- delivery ----------
 
+-- Each transport pastes the envelope, and can bring its terminal forward.
 local adapters = {
-  ["neovim-terminal"] = function(cand, payload, mode)
-    vim.api.nvim_chan_send(cand.id, bracketed(payload) .. (mode == "submit" and "\r" or ""))
-  end,
-  ["tmux"] = function(cand, payload, mode)
-    assert(run({ "tmux", "load-buffer", "-b", "reviewr", "-" }, payload), "tmux load-buffer failed")
-    assert(run({ "tmux", "paste-buffer", "-p", "-d", "-b", "reviewr", "-t", cand.id }), "tmux paste-buffer failed")
-    if mode == "submit" then run({ "tmux", "send-keys", "-t", cand.id, "Enter" }) end
-  end,
-  ["rex"] = function(cand, payload, mode)
-    local function write(data)
-      local res = run_json({ "rex", "block", "call", "-s", cand.meta.session, "-b", cand.id, "write", "-" },
-        vim.json.encode({ data = data }))
-      assert(res, "rex write failed for " .. cand.id)
-    end
-    write(bracketed(payload))
-    if mode == "submit" then write("\r") end
-  end,
-  ["wezterm"] = function(cand, payload, mode)
-    assert(run({ "wezterm", "cli", "send-text", "--pane-id", cand.id }, payload), "wezterm send-text failed")
-    if mode == "submit" then run({ "wezterm", "cli", "send-text", "--pane-id", cand.id, "--no-paste" }, "\r") end
-  end,
+  ["neovim-terminal"] = {
+    send = function(cand, payload, mode)
+      vim.api.nvim_chan_send(cand.id, bracketed(payload) .. (mode == "submit" and "\r" or ""))
+    end,
+    focus = function(cand)
+      for _, win in ipairs(vim.api.nvim_list_wins()) do
+        if vim.bo[vim.api.nvim_win_get_buf(win)].channel == cand.id then
+          vim.api.nvim_set_current_win(win)
+          return
+        end
+      end
+    end,
+  },
+  ["tmux"] = {
+    send = function(cand, payload, mode)
+      assert(run({ "tmux", "load-buffer", "-b", "reviewr", "-" }, payload), "tmux load-buffer failed")
+      assert(run({ "tmux", "paste-buffer", "-p", "-d", "-b", "reviewr", "-t", cand.id }), "tmux paste-buffer failed")
+      if mode == "submit" then run({ "tmux", "send-keys", "-t", cand.id, "Enter" }) end
+    end,
+    focus = function(cand)
+      run({ "tmux", "select-window", "-t", cand.id })
+      run({ "tmux", "select-pane", "-t", cand.id })
+    end,
+  },
+  ["rex"] = {
+    send = function(cand, payload, mode)
+      local rex = require("reviewr.rex")
+      assert(rex.write(cand.meta.session, cand.id, bracketed(payload)), "rex write failed for " .. cand.id)
+      if mode == "submit" then rex.write(cand.meta.session, cand.id, "\r") end
+    end,
+    focus = function(cand)
+      require("reviewr.rex").focus(cand.meta.session, cand.id)
+    end,
+  },
+  ["wezterm"] = {
+    send = function(cand, payload, mode)
+      assert(run({ "wezterm", "cli", "send-text", "--pane-id", cand.id }, payload), "wezterm send-text failed")
+      if mode == "submit" then run({ "wezterm", "cli", "send-text", "--pane-id", cand.id, "--no-paste" }, "\r") end
+    end,
+    focus = function(cand)
+      run({ "wezterm", "cli", "activate-pane", "--pane-id", cand.id })
+    end,
+  },
 }
 
 local function enabled(name)
@@ -200,7 +213,8 @@ end
 
 -- Delivers the envelope to the running agent, asking which one when there
 -- are several (most likely first); else the inbox, else the clipboard. Calls
--- cb(transport, label), or cb(nil, "cancelled") when the choice is dismissed.
+-- cb(transport, label, candidate), or cb(nil, "cancelled") when the choice is
+-- dismissed.
 function M.send(envelope, opts, cb)
   opts = opts or {}
   cb = cb or function() end
@@ -209,15 +223,17 @@ function M.send(envelope, opts, cb)
       local ok, path = pcall(M.write_inbox, opts.repo, envelope)
       if ok then return cb("filesystem-inbox", path) end
     end
-    vim.fn.setreg("+", envelope)
+    require("reviewr.clipboard").copy(envelope)
     return cb("clipboard", "clipboard")
   end
   if opts.inbox_only then return fallback() end
   local cands = vim.tbl_filter(function(c) return enabled(c.transport) end, M.detect(opts.repo))
   if #cands == 0 then return fallback() end
   local function deliver(c)
-    if pcall(adapters[c.transport], c, envelope, opts.mode or "queue") then return cb(c.transport, c.label) end
-    return fallback()
+    local adapter = adapters[c.transport]
+    if not pcall(adapter.send, c, envelope, opts.mode or "queue") then return fallback() end
+    if config.get().focus_agent then pcall(adapter.focus, c) end
+    return cb(c.transport, c.label, c)
   end
   if #cands == 1 then return deliver(cands[1]) end
   vim.ui.select(cands, { prompt = "Send review to", format_item = function(c) return c.label end }, function(c)

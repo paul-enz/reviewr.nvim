@@ -42,7 +42,14 @@ By hand, with lazy.nvim:
 
 ## Rex
 
-`rex/reviewr` is a Rex config module. Linked into `~/.config/rex/reviewr` and enabled with `require("reviewr").setup()` in `~/.config/rex/init.lua`, it binds cmd+r: a review of the focused terminal's current branch, against the default branch, opens in a split to its right. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
+`rex/reviewr` is a Rex config module. Linked into `~/.config/rex/reviewr` and enabled in `~/.config/rex/init.lua` (see [INSTALL.md](INSTALL.md); guard the `require` with `pcall`), it binds cmd+r: a review of the focused terminal's current branch, against the default branch, opens in a split to its right. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
+
+Inside Rex the plugin also:
+
+- lists every terminal in one `rex do` round trip, so `s` stays quick with many panes open;
+- brings the agent's terminal forward after sending (`focus_agent`);
+- watches the program status of agents working in the repo and of any agent it sends to: when one starts a turn, the turn baseline is snapshotted (`baseline_trigger = "agent"`, the default in Rex), so `:ReviewrScope turn` shows exactly what that turn changed; when it finishes, the open review reloads (`refresh_on_agent`);
+- copies through OSC 52 as well as the `+` register, so `y` reaches your clipboard when Neovim runs on another machine.
 
 ## Shell usage
 
@@ -125,7 +132,9 @@ Default delivery is **queue** (pasted into the agent input, no Enter); set `send
 
 ```lua
 require("reviewr").setup({
-  baseline_trigger = "open",   -- open | first_comment | manual
+  baseline_trigger = "auto",   -- auto (agent in Rex, else open) | open | agent | first_comment | manual
+  focus_agent = true,          -- bring the agent's terminal forward after sending
+  refresh_on_agent = true,     -- reload the review when a watched agent finishes
   log_level = "info",
   send_mode = "queue",         -- queue | submit
   private_ref_prefix = "refs/reviewr",

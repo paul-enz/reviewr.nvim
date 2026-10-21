@@ -60,13 +60,22 @@ pane, a Rex terminal, or a WezTerm pane. tmux and WezTerm panes must work in
 the repository; in Rex, any terminal of Neovim's own session qualifies, and
 terminals of other sessions must work in the repository. With several
 agents, a picker lists them by terminal title. With none it writes
-<repo>/.reviewr/inbox/, and failing that copies to the clipboard.
+<repo>/.reviewr/inbox/, and failing that copies to the clipboard. After
+sending, the agent's terminal comes forward.
+
+In Rex the plugin watches the status that agents report. When a watched agent
+starts a turn, the turn baseline is snapshotted, so :ReviewrScope turn shows
+what that turn changed; when it finishes, the open review reloads. Copies also
+go out as OSC 52, which reaches the local clipboard from a remote Neovim.
 
 CONFIGURATION                                           *reviewr-config*
 
 >lua
   require("reviewr").setup({
-    baseline_trigger = "open",   -- open | first_comment | manual
+    baseline_trigger = "auto",   -- agent in Rex, else open; or open, agent,
+                                 -- first_comment, manual
+    focus_agent = true,          -- bring the agent's terminal forward after s
+    refresh_on_agent = true,     -- reload when a watched agent finishes
     send_mode = "queue",         -- queue | submit
     keymaps = true,              -- false, or a table such as { send = "S" }
     adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
