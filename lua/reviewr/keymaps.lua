@@ -53,39 +53,50 @@ local function open_comment_box()
   local file = vim.api.nvim_buf_get_name(0)
   if file == "" then file = require("reviewr.ui").panes().file or "" end
   local origin = vim.api.nvim_get_current_win()
+  local origin_buf = vim.api.nvim_get_current_buf()
   local alt = ui.alternate_win()
   if not alt or not vim.api.nvim_win_is_valid(alt) then
     vim.notify("reviewr: open a review first", vim.log.levels.WARN)
     return
   end
-  local saved = vim.api.nvim_win_get_buf(alt)
-  vim.bo[saved].bufhidden = "hide"
 
-  local buf = vim.api.nvim_create_buf(false, false)
+  local buf = vim.api.nvim_create_buf(false, true)
   local span = startl == endl and tostring(startl) or (startl .. "-" .. endl)
-  local header = { "# " .. vim.fn.fnamemodify(file, ":t") .. ":" .. span, "" }
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, header)
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "wipe"
-  vim.api.nvim_buf_set_name(buf, "reviewr://comment/" .. span)
 
-  vim.api.nvim_win_set_buf(alt, buf)
-  pcall(function() vim.wo[alt].winbar = "  comment  ·  :w save   <esc> cancel  " end)
-  vim.api.nvim_set_current_win(alt)
-  vim.fn.cursor(#header + 1, 1)
+  -- a small box over the other pane, beside the line being commented
+  local anchor = vim.api.nvim_win_get_position(origin)
+  local width = math.min(48, vim.api.nvim_win_get_width(alt) - 2)
+  local height = 6
+  local box = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    col = anchor[2],
+    row = math.min(anchor[1] + vim.fn.winline() - 1, vim.o.lines - height - 3),
+    style = "minimal",
+    border = "rounded",
+    title = " comment  " .. vim.fn.fnamemodify(file, ":t") .. ":" .. span .. " ",
+    title_pos = "left",
+    footer = " :w save    <esc> cancel ",
+    footer_pos = "right",
+  })
+  vim.wo[box].winhl = "Normal:Normal,FloatBorder:ReviewrPanelBorder"
   vim.cmd("startinsert")
+
+  -- mark the lines being commented, so the right pane shows them
+  ui.mark_range(origin_buf, startl, endl)
 
   local function finish(save)
     vim.cmd("stopinsert")
-    local body = table.concat(vim.api.nvim_buf_get_lines(buf, #header, -1, false), "\n")
-    if vim.api.nvim_win_is_valid(alt) then
-      vim.api.nvim_win_set_buf(alt, saved)
-      pcall(function() vim.wo[alt].winbar = "  base  " end)
-    end
+    local body = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+    if vim.api.nvim_win_is_valid(box) then vim.api.nvim_win_close(box, true) end
+    ui.clear_range(origin_buf)
     if vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
     if save and body:gsub("%s", "") ~= "" then
       require("reviewr").add_comment({ file = file, body = body, start = startl, ["end"] = endl })
-      ui.redraw(vim.api.nvim_win_get_buf(origin))
+      ui.redraw(origin_buf)
     end
   end
   vim.keymap.set("n", "<esc>", function() finish(false) end, { buffer = buf, silent = true, nowait = true })

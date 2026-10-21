@@ -42,6 +42,7 @@ function M.setup(opts)
   hl("ReviewrPanelBorder",  { fg = "#414868" })
   hl("ReviewrCommentText",  { fg = "#c0caf5" })
   hl("ReviewrCommentFile",  { fg = "#7dcfff", bold = true })
+  hl("ReviewrRange",       { bg = "#3b4261" })
   for _, s in pairs(M.config.signs) do
     vim.fn.sign_define(s.text and ("Reviewr" .. s.text) or "ReviewrSign", {
       text = s.text, texthl = s.texthl,
@@ -69,8 +70,22 @@ function M.open_diff(left_buf, right_buf, opts)
   return state.diff
 end
 
-function M.remember(diff)
-  state.diff = diff or {}
+function M.mark_range(bufnr, startl, endl)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local ns = ensure_ns()
+  vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+  local last = vim.api.nvim_buf_line_count(bufnr)
+  for line = startl, math.min(endl, last) do
+    pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, line - 1, 0, {
+      end_row = line, hl_eol = true, line_hl_group = "ReviewrRange", priority = 50,
+    })
+  end
+end
+
+function M.clear_range(bufnr)
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+    vim.api.nvim_buf_clear_namespace(bufnr, ensure_ns(), 0, -1)
+  end
 end
 
 function M.panes()
