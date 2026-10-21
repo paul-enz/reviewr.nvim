@@ -111,12 +111,16 @@ local function buf_from_ref(repo, ref, path, side)
   return buf
 end
 
+-- Against the working tree, the diff is against a snapshot of it, so files
+-- not yet added to git count as changes too.
 local function changed_files(repo, base_ref, head_ref)
-  local args = { "diff", "--name-status", base_ref }
+  local args
   if head_ref == ":" then
     args = { "diff", "--name-status", "--cached", base_ref }
   elseif head_ref then
     args = { "diff", "--name-status", base_ref, head_ref }
+  else
+    args = { "diff", "--name-status", base_ref, git.snapshot(repo) }
   end
   local files = {}
   for _, l in ipairs(git.run_sync(args, { cwd = repo }).stdout or {}) do
@@ -149,7 +153,9 @@ local function scope_refs(repo, name)
   if name == "branch" then
     local base = default_branch(repo)
     if not base then return nil, nil, "no default branch found" end
-    return base, "HEAD"
+    local mb = git.run_sync({ "merge-base", base, "HEAD" }, { cwd = repo })
+    if not (mb.ok and mb.stdout[1]) then return nil, nil, "no merge base with " .. base end
+    return mb.stdout[1], nil
   end
   return nil, nil, "unknown scope " .. tostring(name)
 end
@@ -225,6 +231,11 @@ function M.open(args)
   local repo = root()
   local base_ref = args[1] or "HEAD"
   local head_ref = args[2] -- nil => working tree
+  if args[1] and not head_ref then
+    -- everything on this branch, committed or not, against where it left base
+    local mb = git.run_sync({ "merge-base", base_ref, "HEAD" }, { cwd = repo })
+    if mb.ok and mb.stdout[1] then base_ref = mb.stdout[1] end
+  end
   local scope_name = args[3] or (head_ref and "branch" or "uncommitted")
   return start(repo, base_ref, head_ref, scope_name)
 end

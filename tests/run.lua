@@ -246,6 +246,20 @@ test("copying in Rex also sends OSC 52, so a remote Neovim reaches the local cli
   eq(sent, { "a", "b" })
 end)
 
+test("branch scope includes uncommitted edits and new files", function()
+  write(repo .. "/g.lua", { "edited, not committed" })
+  write(repo .. "/brand-new.lua", { "untracked" })
+  assert(reviewr.set_scope("branch"))
+  eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files),
+    { "added.md", "brand-new.lua", "f.txt", "g.lua", "gone.txt" })
+  reviewr.open_file("g.lua")
+  eq(lines(ui.panes().right_buf), { "edited, not committed" })
+  eq(lines(ui.panes().left_buf), { "one", "two", "three" }, "left is the merge base")
+  eq(vim.trim(git("diff --cached --name-only")), "", "index untouched")
+  git("checkout -q -- g.lua")
+  vim.fn.delete(repo .. "/brand-new.lua")
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })

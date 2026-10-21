@@ -11,7 +11,8 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 ## Features
 
 - A review tab of its own: side-by-side native Vim diff (`]c`/`[c`, folds) over a **changed-files panel** along the bottom, like an octo.nvim review
-- Scopes: uncommitted, staged, branch (against the merge base), and **turn** — what changed since the last turn baseline
+- Scopes: uncommitted, staged, branch (everything on the branch, committed or not, against its merge base with the default branch), and **turn** — what changed since the last turn baseline
+- Working-tree scopes include new files not yet added to git; `.gitignore` still applies
 - Line comments on a line or range, anchored by identity (file, side, start, end) — never row index
 - In-memory comment store by design (ephemeral; close drops unsent comments)
 - All-or-none export: clipboard, agent send, or filesystem inbox
@@ -65,8 +66,8 @@ nvim -c 'cd /path/repo' -c 'ReviewrOpen HEAD feature'
 
 | Command | Description |
 |---|---|
-| `:ReviewrOpen [base] [head] [label]` | open a review; no args reviews uncommitted changes, `{base} {head}` diffs head against its merge base with base |
-| `:ReviewrScope {scope}` | switch scope: `uncommitted`, `staged`, `branch` (default branch...HEAD), `turn` |
+| `:ReviewrOpen [base] [head] [label]` | open a review; no args reviews uncommitted changes, `{base}` alone reviews the working tree against its merge base with base, `{base} {head}` diffs the commits of head against its merge base with base |
+| `:ReviewrScope {scope}` | switch scope: `uncommitted`, `staged`, `branch` (the working tree against its merge base with the default branch), `turn` |
 | `:[range]ReviewrComment {text}` | comment on the current line or range |
 | `:ReviewrTurn` | snapshot the working tree as the turn baseline |
 | `:ReviewrExport {clipboard\|send\|inbox}` | export all comments (all-or-none) |

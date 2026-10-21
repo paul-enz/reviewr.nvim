@@ -18,13 +18,13 @@ function M.ref_name(repo, scope)
   return string.format("%s/%s/%s", config.get().private_ref_prefix, slug(repo), slug(scope_name))
 end
 
--- A commit of the working tree as it is now (tracked files), without touching
--- the worktree, index or stash list; HEAD when nothing is modified.
+-- A commit of the working tree as it is now, untracked files included,
+-- without touching the worktree, index or refs.
 function M.current_sha(repo)
   repo = repo or (scope_mod.repo() or vim.fn.getcwd())
-  local snap = git.run_sync({ "stash", "create" }, { cwd = repo })
-  if snap.ok and snap.stdout[1] and snap.stdout[1] ~= "" then return snap.stdout[1] end
-  local r = git.run_sync({ "rev-parse", "HEAD" }, { cwd = repo })
+  local tree = git.snapshot(repo)
+  if not tree then return nil end
+  local r = git.run_sync({ "commit-tree", tree, "-p", "HEAD", "-m", "reviewr turn" }, { cwd = repo })
   if r.code ~= 0 then return nil end
   return r.stdout[1]
 end

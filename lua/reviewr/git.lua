@@ -61,6 +61,26 @@ function M.show(ref_path, cwd)
   return r.stdout, r
 end
 
+-- A tree of the working tree as it is now: tracked edits and untracked files
+-- that .gitignore doesn't exclude. Built in a private index kept in the git
+-- directory (seeded from the real one), so the real index, worktree and refs
+-- are untouched, and later snapshots only rehash files that changed.
+function M.snapshot(cwd)
+  local paths = M.run_sync({ "rev-parse", "--absolute-git-dir", "--git-path", "index" }, { cwd = cwd }).stdout
+  if not paths or not paths[2] then return nil end
+  local index = paths[2]:match("^/") and paths[2] or (cwd .. "/" .. paths[2])
+  local private = paths[1] .. "/reviewr-index"
+  if vim.fn.filereadable(private) == 0 and vim.fn.filereadable(index) == 1 then
+    vim.uv.fs_copyfile(index, private)
+  end
+  local env = { GIT_INDEX_FILE = private }
+  local add = vim.system({ "git", "-C", cwd, "add", "-A" }, { env = env }):wait()
+  if add.code ~= 0 then return nil end
+  local tree = vim.system({ "git", "-C", cwd, "write-tree" }, { env = env, text = true }):wait()
+  if tree.code ~= 0 then return nil end
+  return vim.trim(tree.stdout)
+end
+
 function M.update_ref(ref, value, cwd)
   return M.run_sync({ "update-ref", ref, value }, { cwd = cwd })
 end

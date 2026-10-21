@@ -24,7 +24,8 @@ nvim --headless -c 'lua io.stdout:write(tostring(pcall(require, "reviewr")) .. "
 
 | The user wants | Neovim command |
 |---|---|
-| the current branch against the default branch (the usual "review my branch") | `ReviewrScope branch` |
+| everything on the current branch, committed or not, against the default branch (the usual "review my branch") | `ReviewrScope branch` |
+| the working tree against `main` | `ReviewrOpen main` |
 | `feature` against `main` | `ReviewrOpen main feature` |
 | uncommitted changes | `ReviewrOpen` |
 | what is staged | `ReviewrScope staged` |
@@ -37,7 +38,7 @@ review shows exactly your changes; suggest it rather than a branch diff.
 
 `ReviewrOpen {base} {head}` diffs `head` against its merge base with `base`, the
 way a pull request does, so commits that landed on `base` later don't show.
-Branch scopes compare commits only; uncommitted edits don't appear in them.
+Working-tree reviews (no head ref: `branch`, `uncommitted`, `turn`, `ReviewrOpen main`) include uncommitted edits and new untracked files; a review with two refs compares commits only.
 Resolve the user's words to real refs first (`git branch -a`,
 `git rev-parse --verify <ref>`), and ask when a name matches nothing or several
 things. "No changes found" with an empty Neovim means the pair has no diff;

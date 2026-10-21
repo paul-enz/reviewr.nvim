@@ -6,8 +6,9 @@ local TERMINAL = "com.superlogical.terminal"
 
 M.config = {
   key = "cmd+r",
-  -- run in the new Neovim; the branch scope diffs the current branch against
-  -- its merge base with the default branch (origin/HEAD, else main or master)
+  -- run in the new Neovim; the branch scope diffs the working tree, commits
+  -- and uncommitted edits alike, against its merge base with the default
+  -- branch (origin/HEAD, else main or master)
   command = "ReviewrScope branch",
   nvim = "nvim",
   -- the share of the row the focused terminal keeps

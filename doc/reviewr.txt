@@ -18,10 +18,13 @@ or ranges of either side and live in memory until they are sent.
 COMMANDS                                                *reviewr-commands*
 
   :ReviewrOpen [base] [head] [label]
-        No arguments: uncommitted changes. With {base} {head}: {head}
-        against its merge base with {base}.
+        No arguments: uncommitted changes. With {base}: the working tree
+        against its merge base with {base}. With {base} {head}: the commits
+        of {head} against its merge base with {base}. Reviews of the working
+        tree include files not yet added to git.
   :ReviewrScope {scope}
-        uncommitted, staged, branch (default branch...HEAD) or turn (the
+        uncommitted, staged, branch (the working tree, commits and all,
+        against its merge base with the default branch) or turn (the
         working tree against the last turn baseline).
   :[range]ReviewrComment {text}
         Comment on the current line or range.
