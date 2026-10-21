@@ -52,7 +52,8 @@ In the diff panes:
   f F   next / previous changed file
   r     reread the changes from git and the working tree
   ?     all keys
-  q     close; asks first when comments are unsent. A review that cmd+r
+  q     close. With unsent comments it asks once: <CR> closes, <Right> then
+        <CR> or <Esc> keeps reviewing. A review that cmd+r
         opened in Rex quits its Neovim, closing the pane
 
 In the changed-files panel, <CR> opens the file under the cursor and q

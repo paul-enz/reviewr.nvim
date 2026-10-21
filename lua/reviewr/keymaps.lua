@@ -147,9 +147,8 @@ function M.quit()
   local n = require("reviewr.store").count()
   local close = require("reviewr").close
   if n == 0 then return close() end
-  vim.ui.select({ "keep reviewing", "close and drop " .. n .. " unsent" },
-    { prompt = n .. " unsent " .. (n == 1 and "comment" or "comments") },
-    function(choice) if choice and choice:find("^close") then close() end end)
+  require("reviewr.ui").confirm("Close review?",
+    n .. " unsent " .. (n == 1 and "comment" or "comments") .. " will be lost.", close)
 end
 
 local function report(ok, res, dest)

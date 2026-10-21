@@ -117,7 +117,7 @@ The bar above the change pane always shows the next step. `?` lists every key.
 | `f` / `F` | next / previous changed file |
 | `r` | reread the changes from git and the working tree |
 | `?` | all keys |
-| `q` | close; asks first when comments are unsent. A review cmd+r opened closes its pane too |
+| `q` | close. With unsent comments it asks once: Enter closes, Right then Enter or Esc keeps reviewing. A review cmd+r opened closes its pane too |
 
 In the changed-files panel, `<CR>` opens the file under the cursor and `q` closes the review.
 

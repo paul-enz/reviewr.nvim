@@ -32,6 +32,7 @@ local function highlights()
     ReviewrCommentText = "Comment",
     ReviewrPanelBorder = "FloatBorder",
     ReviewrRange = "Visual",
+    ReviewrButton = "PmenuSel",
   }) do
     vim.api.nvim_set_hl(0, name, { link = link, default = true })
   end
@@ -279,6 +280,62 @@ function M.toggle_panel()
     vim.keymap.set("n", key, M.toggle_panel, { buffer = state.panel_buf, silent = true, nowait = true })
   end
   return true
+end
+
+-- ---------- confirm ----------
+
+-- A small yes/no box. Yes starts highlighted, so <CR> confirms; <Right> or
+-- <Tab> moves to No and <Left> back, <CR> takes the highlighted choice, and
+-- <Esc> cancels. y and n answer directly.
+function M.confirm(title, message, on_yes)
+  local width = math.max(vim.fn.strwidth(message) + 4, 26)
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].bufhidden = "wipe"
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = 3,
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    row = math.max(0, math.floor((vim.o.lines - 5) / 2)),
+    style = "minimal",
+    border = "rounded",
+    title = " " .. title .. " ",
+    title_pos = "center",
+  })
+  vim.wo[win].winhl = "Normal:Normal,FloatBorder:ReviewrPanelBorder"
+  local buttons = { "  Yes  ", "  No  " }
+  local gap = "   "
+  local pad = math.floor((width - vim.fn.strwidth(buttons[1] .. gap .. buttons[2])) / 2)
+  local selected = 1
+  local function render()
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      " " .. message, "", string.rep(" ", pad) .. buttons[1] .. gap .. buttons[2],
+    })
+    vim.bo[buf].modifiable = false
+    vim.api.nvim_buf_clear_namespace(buf, ensure_ns(), 0, -1)
+    local start = pad + (selected == 1 and 0 or #buttons[1] + #gap)
+    vim.api.nvim_buf_set_extmark(buf, ensure_ns(), 2, start, {
+      end_col = start + #buttons[selected], hl_group = "ReviewrButton",
+    })
+    pcall(vim.api.nvim_win_set_cursor, win, { 3, start })
+  end
+  local function finish(yes)
+    if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+    if yes then on_yes() end
+  end
+  local function map(keys, fn)
+    for _, key in ipairs(keys) do
+      vim.keymap.set("n", key, fn, { buffer = buf, silent = true, nowait = true })
+    end
+  end
+  map({ "<CR>" }, function() finish(selected == 1) end)
+  map({ "<Right>", "l", "<Tab>" }, function() selected = 2; render() end)
+  map({ "<Left>", "h", "<S-Tab>" }, function() selected = 1; render() end)
+  map({ "<Esc>", "q", "n" }, function() finish(false) end)
+  map({ "y" }, function() finish(true) end)
+  render()
+  return win
 end
 
 -- ---------- help ----------
