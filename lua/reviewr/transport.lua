@@ -92,26 +92,34 @@ local function tmux_candidates(repo_root)
   return cands
 end
 
+-- Every agent in Neovim's own Rex session, wherever it works, and agents in
+-- other sessions that work in the repo.
 local function rex_candidates(repo_root)
   local listing = run_json({ "rex", "ls", "--json" })
   if not listing then return {} end
   local cands = {}
   for _, sess in ipairs(listing.sessions or {}) do
-    local blocks = run_json({ "rex", "block", "ls", "-s", sess.session_id, "--json" }) or {}
-    for _, b in ipairs(blocks.blocks or {}) do
+    local own = sess.session_id == vim.env.REX_SESSION
+    local blocks = (run_json({ "rex", "block", "ls", "-s", sess.session_id, "--json" }) or {}).blocks or {}
+    for _, b in ipairs(blocks) do
       if b.block_id ~= vim.env.REX_BLOCK then
-        local proc = run_json({ "rex", "block", "call", "-s", sess.session_id, "-b", b.block_id, "process", "{}" })
-        local fg = proc and proc.foreground or {}
+        local function call(method)
+          return run_json({ "rex", "block", "call", "-s", sess.session_id, "-b", b.block_id, method, "{}" }) or {}
+        end
+        local fg = call("process").foreground or {}
         local name
         for _, n in ipairs({ fg.argv0, fg.name, fg.invoked_path }) do
           if is_agent(basename(n)) then name = basename(n); break end
         end
-        if name and in_repo(fg.cwd, repo_root) then
+        local here = in_repo(fg.cwd, repo_root)
+        if name and (own or here) then
+          local title = call("title").title
           table.insert(cands, {
             id = b.block_id,
             transport = "rex",
-            label = name .. " @ " .. (sess.label or sess.session_id),
-            conf = sess.session_id == vim.env.REX_SESSION and 0.88 or 0.86,
+            label = string.format("%s — %s (%s)", name, (title and title ~= "") and title or b.label or b.block_id,
+              sess.label or sess.session_id),
+            conf = here and (own and 0.88 or 0.86) or 0.6,
             meta = { session = sess.session_id },
           })
         end
@@ -190,25 +198,31 @@ function M.write_inbox(repo, payload)
   return path
 end
 
--- Delivers the envelope to the best running agent, else the inbox, else the
--- clipboard. Returns the transport used and a human label for it.
-function M.send(envelope, opts)
+-- Delivers the envelope to the running agent, asking which one when there
+-- are several (most likely first); else the inbox, else the clipboard. Calls
+-- cb(transport, label), or cb(nil, "cancelled") when the choice is dismissed.
+function M.send(envelope, opts, cb)
   opts = opts or {}
-  local mode = opts.mode or "queue"
-  if not opts.inbox_only then
-    for _, c in ipairs(M.detect(opts.repo)) do
-      if enabled(c.transport) then
-        local ok = pcall(adapters[c.transport], c, envelope, mode)
-        if ok then return c.transport, c.label end
-      end
+  cb = cb or function() end
+  local function fallback()
+    if opts.repo and enabled("filesystem-inbox") then
+      local ok, path = pcall(M.write_inbox, opts.repo, envelope)
+      if ok then return cb("filesystem-inbox", path) end
     end
+    vim.fn.setreg("+", envelope)
+    return cb("clipboard", "clipboard")
   end
-  if opts.repo and enabled("filesystem-inbox") then
-    local ok, path = pcall(M.write_inbox, opts.repo, envelope)
-    if ok then return "filesystem-inbox", path end
+  if opts.inbox_only then return fallback() end
+  local cands = vim.tbl_filter(function(c) return enabled(c.transport) end, M.detect(opts.repo))
+  if #cands == 0 then return fallback() end
+  local function deliver(c)
+    if pcall(adapters[c.transport], c, envelope, opts.mode or "queue") then return cb(c.transport, c.label) end
+    return fallback()
   end
-  vim.fn.setreg("+", envelope)
-  return "clipboard", "clipboard"
+  if #cands == 1 then return deliver(cands[1]) end
+  vim.ui.select(cands, { prompt = "Send review to", format_item = function(c) return c.label end }, function(c)
+    if c then deliver(c) else cb(nil, "cancelled") end
+  end)
 end
 
 return M

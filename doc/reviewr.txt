@@ -55,9 +55,11 @@ closes the review.
 
 AGENTS                                                  *reviewr-agents*
 
-`s` pastes the review into the first running agent it finds: a Neovim
-|terminal|, then a tmux pane, a Rex terminal in any session, then a WezTerm
-pane. Panes outside the repository are skipped. With no agent it writes
+`s` pastes the review into a running agent: in a Neovim |terminal|, a tmux
+pane, a Rex terminal, or a WezTerm pane. tmux and WezTerm panes must work in
+the repository; in Rex, any terminal of Neovim's own session qualifies, and
+terminals of other sessions must work in the repository. With several
+agents, a picker lists them by terminal title. With none it writes
 <repo>/.reviewr/inbox/, and failing that copies to the clipboard.
 
 CONFIGURATION                                           *reviewr-config*

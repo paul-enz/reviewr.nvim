@@ -32,7 +32,12 @@ function M.setup(opts)
     require("reviewr.ui").redraw()
   end, { nargs = "+", range = true })
   vim.api.nvim_create_user_command("ReviewrTurn", function() M.mark_turn() end, {})
-  vim.api.nvim_create_user_command("ReviewrExport", function(o) M.export(o.args ~= "" and o.args or nil) end, {
+  vim.api.nvim_create_user_command("ReviewrExport", function(o)
+    M.export(o.args ~= "" and o.args or nil, function(ok, res, dest)
+      vim.notify("reviewr: " .. (ok and (res .. " exported to " .. tostring(dest)) or tostring(res)),
+        ok and vim.log.levels.INFO or vim.log.levels.WARN)
+    end)
+  end, {
     nargs = "?",
     complete = function() return { "clipboard", "send", "inbox" } end,
   })
@@ -310,33 +315,45 @@ local function envelope(repo, comments)
   return table.concat(lines, "\n")
 end
 
--- Exports every comment, or none: returns ok, count (or the failure reason),
--- and where the comments went.
-function M.export(target)
+-- Exports every comment, or none. Reports ok, the count (or the failure
+-- reason) and where the comments went, through cb and, when delivery
+-- finishes at once, the return values.
+function M.export(target, cb)
+  local result
+  local function finish(...)
+    result = { ... }
+    if cb then cb(...) end
+    return ...
+  end
   local scope = scope_mod.get() or {}
   local repo = scope.repo or root()
   local comments = store.ordered({ repo = repo })
-  if #comments == 0 then return false, "no comments to export" end
+  if #comments == 0 then return finish(false, "no comments to export") end
   for _, c in ipairs(comments) do
     local ok, reason = valid_comment(c)
     if not ok then
       log.error("export aborted: " .. reason .. " (" .. (c.id or "?") .. ")")
       events.emit("ExportFailed", { reason = reason, comment = c })
-      return false, reason
+      return finish(false, reason)
     end
   end
   local text = envelope(repo, comments)
+  local function delivered(tname, label)
+    if not tname then return finish(false, label) end
+    events.emit("Exported", { target = tname, label = label, count = #comments })
+    return finish(true, #comments, label)
+  end
   local transport = require("reviewr.transport")
-  local tname, label = "clipboard", "clipboard"
   if target == "send" or target == "agent" then
-    tname, label = transport.send(text, { repo = repo, mode = config_mod.get().send_mode })
+    transport.send(text, { repo = repo, mode = config_mod.get().send_mode }, delivered)
   elseif target == "inbox" or target == "filesystem-inbox" then
-    tname, label = transport.send(text, { repo = repo, inbox_only = true })
+    transport.send(text, { repo = repo, inbox_only = true }, delivered)
   else
     vim.fn.setreg("+", text)
+    delivered("clipboard", "clipboard")
   end
-  events.emit("Exported", { target = tname, label = label, count = #comments })
-  return true, #comments, label
+  if result then return unpack(result) end
+  return true, #comments, "pending"
 end
 
 function M.clear(query)

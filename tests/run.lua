@@ -154,6 +154,30 @@ test("send pastes into a terminal running an agent", function()
   vim.cmd("bwipeout!")
 end)
 
+test("send asks which agent when there are several", function()
+  local bin = vim.fn.tempname()
+  vim.fn.mkdir(bin, "p")
+  sh("ln -s /bin/cat " .. bin .. "/codex && ln -s /bin/cat " .. bin .. "/aider")
+  vim.cmd("tabnew | terminal " .. bin .. "/codex")
+  vim.cmd("tabnew | terminal " .. bin .. "/aider")
+  local chan = vim.bo.channel
+  vim.wait(500)
+  store.clear()
+  reviewr.add_comment({ file = "f.txt", start = 1, body = "pick me" })
+  local offered
+  local select = vim.ui.select
+  vim.ui.select = function(items, opts, cb)
+    offered = vim.tbl_map(opts.format_item, items)
+    for _, c in ipairs(items) do if c.id == chan then return cb(c) end end
+  end
+  local ok, n, dest = reviewr.export("send")
+  vim.ui.select = select
+  eq(#offered, 2)
+  eq({ ok, n, dest }, { true, 1, "aider (nvim terminal)" })
+  store.clear()
+  vim.cmd("bwipeout! | bwipeout!")
+end)
+
 test("export with no comments is refused", function()
   store.clear()
   eq({ reviewr.export("clipboard") }, { false, "no comments to export" })

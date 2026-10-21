@@ -83,14 +83,14 @@ All buffer-local and remappable through the `keymaps` option or `require("review
 
 ## Agents
 
-`s` pastes the review into the first running agent it finds (`claude`, `codex`, `opencode`, `aider`, `goose`, `cline`, `pi`), looking in this order:
+`s` pastes the review into a running agent (`claude`, `codex`, `opencode`, `aider`, `goose`, `cline`, `pi`). It looks in:
 
-1. a Neovim `:terminal` whose processes include an agent;
-2. a tmux pane in the repo running an agent (inside tmux);
-3. a Rex terminal, in any session, whose foreground program is an agent working in the repo (inside Rex);
-4. a WezTerm pane in the repo running an agent (inside WezTerm).
+1. Neovim `:terminal`s whose processes include an agent;
+2. tmux panes in the repo running an agent (inside tmux);
+3. Rex terminals running an agent: any terminal in Neovim's own Rex session, and terminals in other sessions working in the repo (inside Rex);
+4. WezTerm panes in the repo running an agent (inside WezTerm).
 
-With no agent found it writes the inbox file, and failing that copies to the clipboard. The `adapters` option limits which of these are tried.
+With one agent found it sends straight away; with several, a picker lists them, the likeliest first, with each terminal's title. With none it writes the inbox file, and failing that copies to the clipboard. The `adapters` option limits which of these are tried.
 
 ## Agent send protocol
 

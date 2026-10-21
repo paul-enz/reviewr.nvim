@@ -150,8 +150,7 @@ function M.quit()
     function(choice) if choice and choice:find("^close") then close() end end)
 end
 
-local function export(target)
-  local ok, res, dest = require("reviewr").export(target)
+local function report(ok, res, dest)
   if not ok then
     vim.notify("reviewr: " .. tostring(res), vim.log.levels.WARN)
     return
@@ -161,6 +160,10 @@ local function export(target)
     or (dest and dest:find("/") and ("wrote " .. what .. " to " .. dest))
     or ("sent " .. what .. " to " .. tostring(dest))
   vim.notify("reviewr: " .. msg, vim.log.levels.INFO)
+end
+
+local function export(target)
+  require("reviewr").export(target, report)
 end
 
 local function jump_file(dir)
