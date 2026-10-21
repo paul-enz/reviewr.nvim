@@ -1,7 +1,7 @@
 name: test
 
-# The specs run on self-hosted runners, so only the repository owner's code
-# runs unasked: pushes to main and the owner's own pull requests. Anyone
+# Only the repository owner's code runs unasked: pushes to main and the
+# owner's own pull requests. Anyone
 # else's pull request runs when the owner comments /ok-to-test on it, which
 # tests the commit the pull request pointed at when the comment was made.
 # Comment-triggered runs use this file as it is on main, so a pull request
@@ -27,7 +27,7 @@ jobs:
         && github.event.issue.pull_request
         && github.event.comment.author_association == 'OWNER'
         && github.event.comment.body == '/ok-to-test')
-    runs-on: [self-hosted, Linux, X64, proxmox, sabana]
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
       contents: read
@@ -51,8 +51,7 @@ jobs:
             push) sha=$PUSH_SHA ;;
             pull_request) sha=$PR_SHA ;;
             issue_comment)
-              # the runners have no jq; head's label, ref and sha come before
-              # any nested object
+              # head's label, ref and sha come before any nested object
               sha=$(api "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR" | tr -d '\n ' \
                 | grep -o '"head":{[^{}]*"sha":"[0-9a-f]\{40\}"' | grep -o '[0-9a-f]\{40\}' | head -1)
               test -n "$sha"
@@ -77,9 +76,9 @@ jobs:
         neovim: [v0.10.4, stable]
         include:
           - os: linux
-            runs-on: [self-hosted, Linux, X64, proxmox, sabana]
+            runs-on: ubuntu-latest
           - os: macos
-            runs-on: [self-hosted, macOS, ARM64, sabana]
+            runs-on: macos-latest
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 10
     steps:
@@ -87,8 +86,6 @@ jobs:
         with:
           ref: ${{ needs.target.outputs.sha }}
           persist-credentials: false
-      - if: runner.os == 'Linux'
-        uses: ./.github/actions/setup-git
       - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
         with:
           neovim: true
@@ -101,16 +98,9 @@ jobs:
     concurrency:
       group: gitleaks-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
       cancel-in-progress: true
-    runs-on: [self-hosted, Linux, X64, proxmox, sabana]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # the first checkout brings the setup-git action; with git installed, the
-      # second fetches the history gitleaks reads
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.target.outputs.sha }}
-          persist-credentials: false
-      - uses: ./.github/actions/setup-git
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.target.outputs.sha }}
@@ -137,7 +127,7 @@ jobs:
   report:
     needs: [target, test, gitleaks]
     if: ${{ always() && github.event_name == 'issue_comment' && needs.target.result == 'success' }}
-    runs-on: [self-hosted, Linux, X64, proxmox, sabana]
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
       statuses: write
