@@ -53,28 +53,32 @@ The integration binds cmd+r to show or hide a review of everything on the
 focused terminal's branch, committed or not, against the default branch, in a
 split to its right. Hidden reviews keep running with their comments.
 
-```sh
-ln -s "$plugin/rex/reviewr" ~/.config/rex/reviewr
-```
-
-Add to `~/.config/rex/init.lua`, after any existing `require` lines, guarded:
+Rex loads the module from the copy the user's Neovim plugin manager installed,
+so the two stay on one version. Find `rex/reviewr/init.lua` inside that copy
+(with lazy.nvim, `$plugin/rex/reviewr/init.lua` from step 2; with vim.pack,
+`<data>/nvim/site/pack/core/opt/reviewr.nvim/rex/reviewr/init.lua`) and add to
+`~/.config/rex/init.lua`, after the user's other module loads, guarded:
 
 ```lua
 do
-  local ok, reviewr = pcall(require, "reviewr")
+  local data_home = os.getenv("XDG_DATA_HOME") or os.getenv("HOME") .. "/.local/share"
+  local path = data_home .. "/nvim/lazy/reviewr.nvim/rex/reviewr/init.lua" -- the path you found
+  local ok, reviewr = pcall(dofile, path)
   if ok then reviewr.setup() end   -- or setup({ key = "ctrl+a>r" }) to pick another key
 end
 ```
 
 Keep the `pcall`. Rex skips a bad `rex.*` call but stops loading the file at a
-Lua error, and a `require` of a module that is gone (the plugin removed, the
-link broken) is one: every binding after it would be lost. If the user's
-config has other unguarded `require` lines, point this out and offer to guard
-them the same way.
+Lua error, and loading a file that is gone (the plugin removed or moved) is
+one: every binding after it would be lost. If the user's config has other
+unguarded `require` or `dofile` lines, point this out and offer to guard them
+the same way.
 
 Check the key is free first (`rex keymap`), then `rex config check` and
 `rex config reload`. `rex keymap` should list the key with source
-`reviewr/init.lua`.
+`reviewr.nvim/rex/reviewr/init.lua`. Tell the user that Rex needs
+`rex config reload` after every plugin update, since it doesn't watch its
+files.
 
 ## 4. Verify
 

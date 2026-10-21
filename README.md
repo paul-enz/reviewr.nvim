@@ -43,9 +43,33 @@ By hand, with lazy.nvim:
 
 ## Rex
 
-`rex/reviewr` is a Rex config module. Linked into `~/.config/rex/reviewr` and enabled in `~/.config/rex/init.lua` (see [INSTALL.md](INSTALL.md); guard the `require` with `pcall`), it binds cmd+r to show or hide a review beside the focused terminal. The first press opens a review of the terminal's branch, committed or not, against the default branch, in a split to its right; the next press hides it, still running with its comments, and the press after brings it back.
+`rex/reviewr/init.lua` is a Rex config module. Loaded from `~/.config/rex/init.lua` (see below), it binds cmd+r to show or hide a review beside the focused terminal. The first press opens a review of the terminal's branch, committed or not, against the default branch, in a split to its right; the next press hides it, still running with its comments, and the press after brings it back.
 
 Pressed in an agent's terminal, cmd+r opens a review **paired with that agent**: `s` sends to it without asking (`S` still offers the picker), the review follows only that agent's turns, and its turn baseline is its own. Run several agents, each with its own review beside it; with one git worktree per agent, each review's turn view shows exactly its agent's last turn. Agents sharing one working copy see each other's edits in their turn views, since git can't tell who wrote what. Pressed in any other terminal, cmd+r keeps one unpaired review per repository. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
+
+### Share Neovim's managed copy with Rex
+
+Rex loads the module straight from the copy your Neovim plugin manager installed, so both halves stay on the same version and the plugin manager updates them together. Install the plugin in Neovim first, then add this to Rex's config:
+
+```lua
+-- ~/.config/rex/init.lua
+do
+  local data_home = os.getenv("XDG_DATA_HOME") or os.getenv("HOME") .. "/.local/share"
+  -- lazy.nvim; with vim.pack (Neovim 0.12+) use
+  -- data_home .. "/nvim/site/pack/core/opt/reviewr.nvim/rex/reviewr/init.lua"
+  local path = data_home .. "/nvim/lazy/reviewr.nvim/rex/reviewr/init.lua"
+  local ok, reviewr = pcall(dofile, path)
+  if ok then reviewr.setup() end -- or setup({ key = "ctrl+a>r" }) to pick another key
+end
+```
+
+The path assumes Neovim's default app name and data directory on macOS or Linux. For another plugin manager or a custom data directory, point it at `rex/reviewr/init.lua` inside that manager's copy of the plugin.
+
+Keep the `pcall`: Rex stops loading `init.lua` at a Lua error, so if the Neovim copy is removed, an unguarded `dofile` would take every binding after it with it. Guarded, only cmd+r goes.
+
+Run `rex config reload` after configuring Rex and after every plugin update: Rex doesn't watch its files, so it keeps running the old module until reloaded.
+
+### What the plugin does inside Rex
 
 Inside Rex the plugin also:
 
