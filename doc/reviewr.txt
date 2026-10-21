@@ -1,36 +1,43 @@
-*reviewr.txt*  Reviewer for code reviews        *reviewr*
+*reviewr.txt*  Review changes in Neovim and send the comments to a coding agent
 
 ==============================================================================
 CONTENTS                                                 *reviewr-contents*
 
 1. Intro ........................................ |reviewr-intro|
-2. UI .......................................... |reviewr-ui|
+2. Commands ..................................... |reviewr-commands|
 3. Keymaps ...................................... |reviewr-keymaps|
-4. Export ....................................... |reviewr-export|
-5. Integration .................................. |reviewr-integration|
+4. Agents ....................................... |reviewr-agents|
+5. Configuration ................................ |reviewr-config|
 
 INTRO                                                   *reviewr-intro*
 
-reviewr is a beautiful code-review companion with clear signs, a status line,
-and a comment gutter. Floating review panel toggles all comments.
+A review opens in a tab of its own: the base on the left, the change on the
+right, and every changed file listed along the bottom. Comments sit on lines
+or ranges of either side and live in memory until they are sent.
 
-UI                                                      *reviewr-ui*
+COMMANDS                                                *reviewr-commands*
 
-Functions:
-  require("reviewr.ui").setup(opts)
-  require("reviewr.ui").open_diff(left, right, opts)
-  require("reviewr.ui").close_diff()
-  require("reviewr.ui").place_sign(bufnr, lnum, name, priority)
-  require("reviewr.ui").clear_signs(bufnr)
-  require("reviewr.ui").set_extmark(bufnr, line, text, opts)
-  require("reviewr.ui").toggle_panel(items)
-  require("reviewr.ui").statusline()
+  :ReviewrOpen [base] [head] [label]
+        No arguments: uncommitted changes. With {base} {head}: {head}
+        against its merge base with {base}.
+  :ReviewrScope {scope}
+        uncommitted, staged, branch (default branch...HEAD) or turn (the
+        working tree against the last turn baseline).
+  :[range]ReviewrComment {text}
+        Comment on the current line or range.
+  :ReviewrTurn
+        Snapshot the working tree as the turn baseline, in a private
+        refs/reviewr/ ref. Nothing else in the repository changes.
+  :ReviewrExport [clipboard|send|inbox]
+        Export every comment, or none if any is invalid.
+  :ReviewrClear
+        Drop every comment.
 
 KEYMAPS                                                 *reviewr-keymaps*
 
-The footer always shows the next step. `?` lists every key.
+In the diff panes:
 
-  c     comment: opens a buffer in the other pane; :w saves, <esc> cancels
+  c     comment on this line or the selection; :w saves, <esc> cancels
   e     edit the comment under the cursor
   d     delete the comment under the cursor
   n N   next / previous comment
@@ -39,25 +46,33 @@ The footer always shows the next step. `?` lists every key.
   l     list comments
   ]c [c next / previous change
   f F   next / previous changed file
-  r     refresh the diff
+  r     reread the changes from git and the working tree
   ?     all keys
   q     close; asks first when comments are unsent
 
-All buffer-local and remappable through require("reviewr.keymaps").set_defaults().
+In the changed-files panel, <CR> opens the file under the cursor and q
+closes the review.
 
-EXPORT                                                  *reviewr-export*
+AGENTS                                                  *reviewr-agents*
 
-  require("reviewr.export").export_all(comments, opts)
-  require("reviewr.export").build_envelope(comments, meta)
-  require("reviewr.export").to_text(comments)
+`s` pastes the review into the first running agent it finds: a Neovim
+|terminal|, then a tmux pane, a Rex terminal in any session, then a WezTerm
+pane. Panes outside the repository are skipped. With no agent it writes
+<repo>/.reviewr/inbox/, and failing that copies to the clipboard.
 
-All-or-none clipboard/send/inbox formatting and envelope.
+CONFIGURATION                                           *reviewr-config*
 
-INTEGRATION                                             *reviewr-integration*
+>lua
+  require("reviewr").setup({
+    baseline_trigger = "open",   -- open | first_comment | manual
+    send_mode = "queue",         -- queue | submit
+    keymaps = true,              -- false, or a table such as { send = "S" }
+    adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
+  })
+<
 
-  require("reviewr.integration.diffview").available()
-  require("reviewr.integration.diffview").setup(opts)
-
-Optional adapter respecting availability.
+Events fire as |User| autocommands named Reviewr{Setup,Opened,ScopeChanged,
+CommentAdded,CommentEdited,CommentDeleted,Exported,ExportFailed,Cleared,
+TurnMarked}.
 
 vim:tw=78:ts=8:ft=help:norl:

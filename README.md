@@ -10,19 +10,19 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 
 ## Features
 
-- Four diff scopes: uncommitted, staged, branch, commits, plus a private-ref **last turn** baseline
-- Unified/split native Vim diff (`:diffthis`, `]c`/`[c`, folds)
+- A review tab of its own: side-by-side native Vim diff (`]c`/`[c`, folds) over a **changed-files panel** along the bottom, like an octo.nvim review
+- Scopes: uncommitted, staged, branch (against the merge base), and **turn** — what changed since the last turn baseline
 - Line comments on a line or range, anchored by identity (file, side, start, end) — never row index
-- In-memory comment store by design (ephemeral; close loses unsent comments)
+- In-memory comment store by design (ephemeral; close drops unsent comments)
 - All-or-none export: clipboard, agent send, or filesystem inbox
-- Mux-agnostic send: Neovim `:terminal` → tmux / WezTerm / Kitty → process-tree scan → clipboard/inbox fallback
+- Mux-agnostic send to a running agent: Neovim `:terminal` → tmux → Rex → WezTerm → inbox → clipboard
 - Private `refs/reviewr/*` baselines only; never mutates worktree/index/branches
 - Configurable keymaps, events (`User Reviewr…`), leveled logging
 - Runs from the shell: `nvim -d …` or `:ReviewrOpen`
 
 ## Requirements
 
-- Neovim ≥ 0.9
+- Neovim ≥ 0.10
 - git
 - Optional: `plenary.nvim` for async jobs
 
@@ -51,16 +51,16 @@ nvim -c 'cd /path/repo' -c 'ReviewrOpen HEAD feature'
 
 | Command | Description |
 |---|---|
-| `:ReviewrOpen {base} {head} [scope]` | open diff + review session |
-| `:ReviewrScope {scope}` | switch scope (uncommitted/staged/branch/commits) |
-| `:ReviewrComment` | add comment on selection |
-| `:ReviewrTurn` | mark a new turn baseline |
+| `:ReviewrOpen [base] [head] [label]` | open a review; no args reviews uncommitted changes, `{base} {head}` diffs head against its merge base with base |
+| `:ReviewrScope {scope}` | switch scope: `uncommitted`, `staged`, `branch` (default branch...HEAD), `turn` |
+| `:[range]ReviewrComment {text}` | comment on the current line or range |
+| `:ReviewrTurn` | snapshot the working tree as the turn baseline |
 | `:ReviewrExport {clipboard\|send\|inbox}` | export all comments (all-or-none) |
 | `:ReviewrClear` | clear comments |
 
 ## Keys
 
-The footer always shows the next step. `?` lists every key.
+The bar above the change pane always shows the next step. `?` lists every key.
 
 | Key | Action |
 |---|---|
@@ -73,11 +73,24 @@ The footer always shows the next step. `?` lists every key.
 | `l` | list comments |
 | `]c` / `[c` | next / previous change |
 | `f` / `F` | next / previous changed file |
-| `r` | refresh the diff |
+| `r` | reread the changes from git and the working tree |
 | `?` | all keys |
 | `q` | close; asks first when comments are unsent |
 
-All buffer-local and remappable via `require("reviewr.keymaps").set_defaults()`.
+In the changed-files panel, `<CR>` opens the file under the cursor and `q` closes the review.
+
+All buffer-local and remappable through the `keymaps` option or `require("reviewr.keymaps").set_defaults()`.
+
+## Agents
+
+`s` pastes the review into the first running agent it finds (`claude`, `codex`, `opencode`, `aider`, `goose`, `cline`, `pi`), looking in this order:
+
+1. a Neovim `:terminal` whose processes include an agent;
+2. a tmux pane in the repo running an agent (inside tmux);
+3. a Rex terminal, in any session, whose foreground program is an agent working in the repo (inside Rex);
+4. a WezTerm pane in the repo running an agent (inside WezTerm).
+
+With no agent found it writes the inbox file, and failing that copies to the clipboard. The `adapters` option limits which of these are tried.
 
 ## Agent send protocol
 
@@ -88,33 +101,36 @@ Sends a stable envelope:
 id: <nonce>
 source: reviewr.nvim
 repo: /abs/path
-file: path/relative
-range: 42-88
+file: path/relative        (only when every comment is on one file)
+range: 42-88               (only for a single comment)
 created: ISO8601
 format: markdown
 ---
-<body>
+### path/relative:42-88 (right)
+<comment>
+
 @@REVIEW_END
 ```
 
-Default delivery is **queue** (pasted into the agent input, no Enter); set `send_mode = "submit"` to also submit. Filesystem inbox writes the same envelope to `<repo>/.reviewr/inbox/`.
+Default delivery is **queue** (pasted into the agent input, no Enter); set `send_mode = "submit"` to also submit. Filesystem inbox writes the same envelope to `<repo>/.reviewr/inbox/`, which git ignores.
 
 ## Configuration
 
 ```lua
 require("reviewr").setup({
-  baseline_trigger = "open",   -- open | first_comment | manual | bufwrite
+  baseline_trigger = "open",   -- open | first_comment | manual
   log_level = "info",
   send_mode = "queue",         -- queue | submit
   private_ref_prefix = "refs/reviewr",
-  keymaps = true,
+  keymaps = true,              -- false, or a table such as { send = "S" }
+  adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
 })
 ```
 
 ## Testing
 
 ```sh
-nvim --headless -u NONE -c 'set rtp+=/path/reviewr.nvim' -c 'lua require("reviewr").setup({})' -c 'q'
+nvim --headless -u NONE -l tests/run.lua
 ```
 
 ## License
