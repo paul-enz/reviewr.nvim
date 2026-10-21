@@ -61,7 +61,8 @@ In the diff panes:
         opened in Rex quits its Neovim, closing the pane
 
 In the changed-files panel, <CR> opens the file under the cursor and q
-closes the review.
+closes the review. The pickers (gc, gb, S) open a small list: j/k or the
+arrows move, <CR> picks, <Esc> cancels.
 
 AGENTS                                                  *reviewr-agents*
 

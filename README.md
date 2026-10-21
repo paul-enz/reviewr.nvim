@@ -126,6 +126,8 @@ The bar above the change pane always shows the next step. `?` lists every key.
 
 In the changed-files panel, `<CR>` opens the file under the cursor and `q` closes the review.
 
+The pickers (`gc`, `gb`, `S`) open a small list: `j`/`k` or the arrows move, Enter picks, Esc cancels.
+
 All buffer-local and remappable through the `keymaps` option or `require("reviewr.keymaps").set_defaults()`.
 
 ## Agents

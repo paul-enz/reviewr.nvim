@@ -292,7 +292,7 @@ function M.pick_commit()
   local repo = (state.get() or {}).repo or root()
   local log = git.run_sync({ "log", "-n", "100", "--format=%h%x09%s" }, { cwd = repo }).stdout or {}
   local items = vim.tbl_filter(function(l) return l ~= "" end, log)
-  vim.ui.select(items, {
+  require("reviewr.ui").pick(items, {
     prompt = "Review commit",
     format_item = function(l) return (l:gsub("\t", "  ")) end,
   }, function(choice)
@@ -309,7 +309,7 @@ function M.pick_base()
   local items = vim.tbl_filter(function(r)
     return r ~= "" and r ~= current and not r:match("/HEAD$") and r ~= "origin"
   end, refs)
-  vim.ui.select(items, { prompt = "Compare the branch against" }, function(choice)
+  require("reviewr.ui").pick(items, { prompt = "Compare the branch against" }, function(choice)
     if not choice then return end
     chosen_base = choice
     M.set_scope("branch")

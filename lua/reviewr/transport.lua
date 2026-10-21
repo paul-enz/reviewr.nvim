@@ -252,7 +252,7 @@ function M.send(envelope, opts, cb)
   local cands = vim.tbl_filter(function(c) return enabled(c.transport) end, M.detect(opts.repo))
   if #cands == 0 then return fallback() end
   if #cands == 1 and not opts.pick then return deliver(cands[1]) end
-  vim.ui.select(cands, { prompt = "Send review to", format_item = function(c) return c.label end }, function(c)
+  require("reviewr.ui").pick(cands, { prompt = "Send review to", format_item = function(c) return c.label end }, function(c)
     if c then deliver(c) else cb(nil, "cancelled") end
   end)
 end

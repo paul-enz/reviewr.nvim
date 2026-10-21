@@ -166,13 +166,13 @@ test("send asks which agent when there are several", function()
   reviewr.add_comment({ file = "f.txt", start = 1, body = "pick me" })
   vim.cmd("tabfirst")
   local offered
-  local select = vim.ui.select
-  vim.ui.select = function(items, opts, cb)
+  local select = ui.pick
+  ui.pick = function(items, opts, cb)
     offered = vim.tbl_map(opts.format_item, items)
     for _, c in ipairs(items) do if c.id == chan then return cb(c) end end
   end
   local ok, n, dest = reviewr.export("send")
-  vim.ui.select = select
+  ui.pick = select
   eq(#offered, 2)
   eq({ ok, n, dest }, { true, 1, "aider (nvim terminal)" })
   eq(vim.bo.channel, chan, "focus moves to the agent")
@@ -285,7 +285,7 @@ end)
 
 test("s sends straight to the paired agent; S and a gone agent fall back to choosing", function()
   local rex = require("reviewr.rex")
-  local terminals, write, focus, select = rex.terminals, rex.write, rex.focus, vim.ui.select
+  local terminals, write, focus, select = rex.terminals, rex.write, rex.focus, ui.pick
   local alive = true
   rex.terminals = function()
     return alive and { { session_id = "session:t", block_id = "block:A", title = "fixing limiter",
@@ -294,7 +294,7 @@ test("s sends straight to the paired agent; S and a gone agent fall back to choo
   local wrote, picked
   rex.write = function(_, block) wrote = block; return true end
   rex.focus = function() return true end
-  vim.ui.select = function(items, _, cb) picked = #items; cb(nil) end
+  ui.pick = function(items, _, cb) picked = #items; cb(nil) end
   vim.env.REX_SESSION = "session:t"
   vim.g.reviewr_agent = { session = "session:t", block = "block:A", name = "codex" }
   require("reviewr.config").merge({ adapters = { "rex", "filesystem-inbox" } })
@@ -308,7 +308,7 @@ test("s sends straight to the paired agent; S and a gone agent fall back to choo
   alive, picked = false, nil
   local _, _, gone = reviewr.export("send")
   assert(gone and gone:find(".reviewr/inbox", 1, true), tostring(gone))
-  rex.terminals, rex.write, rex.focus, vim.ui.select = terminals, write, focus, select
+  rex.terminals, rex.write, rex.focus, ui.pick = terminals, write, focus, select
   vim.env.REX_SESSION = nil
   require("reviewr.config").merge({ adapters = { "neovim-terminal", "filesystem-inbox" } })
   vim.g.reviewr_agent = nil
@@ -361,9 +361,9 @@ test("u, b and t switch views; gc reviews one picked commit; gb picks the base b
   for _, key in ipairs({ "u", "b", "t", "gc", "gb" }) do
     assert(vim.fn.maparg(key, "n", false, true).buffer == 1, key .. " not bound in the diff")
   end
-  local select = vim.ui.select
+  local select = ui.pick
   local feat = vim.trim(git("log -1 --format=%h feature"))
-  vim.ui.select = function(items, _, cb)
+  ui.pick = function(items, _, cb)
     for _, it in ipairs(items) do if vim.startswith(it, feat) then return cb(it) end end
   end
   reviewr.pick_commit()
@@ -374,16 +374,29 @@ test("u, b and t switch views; gc reviews one picked commit; gb picks the base b
   git("branch -f mid feature")
   git("checkout -q -- .")
   write(repo .. "/g.lua", { "after mid" })
-  vim.ui.select = function(items, _, cb)
+  ui.pick = function(items, _, cb)
     assert(not vim.tbl_contains(items, "feature"), "the current branch is not offered")
     cb("mid")
   end
   reviewr.pick_base()
   eq(require("reviewr.scope").get().label, "branch vs mid")
   eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files), { "g.lua" })
-  vim.ui.select = select
+  ui.pick = select
   git("checkout -q -- g.lua")
   git("branch -D mid")
+end)
+
+test("the picker moves with j and arrows, picks with Enter, cancels with Esc", function()
+  local function press(keys)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "x", false)
+  end
+  local got = "unset"
+  ui.pick({ "one", "two", "three" }, { prompt = "Pick" }, function(c) got = c end)
+  press("j<Down><Up><CR>")
+  eq(got, "two")
+  ui.pick({ "one", "two" }, { prompt = "Pick" }, function(c) got = c end)
+  press("<Esc>")
+  eq(got, nil)
 end)
 
 test("close drops comments and the review tab, even as the only tab", function()

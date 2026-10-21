@@ -340,6 +340,53 @@ function M.confirm(title, message, on_yes)
   return win
 end
 
+-- ---------- pick ----------
+
+-- A list in a box like the confirm box, taking vim.ui.select's arguments:
+-- j/k or the arrows move, <CR> picks, <Esc> or q cancels (on_choice(nil)).
+function M.pick(items, opts, on_choice)
+  opts = opts or {}
+  local format = opts.format_item or tostring
+  local lines = vim.tbl_map(function(it) return " " .. format(it) .. " " end, items)
+  local width = vim.fn.strwidth(opts.prompt or "") + 4
+  for _, l in ipairs(lines) do width = math.max(width, vim.fn.strwidth(l)) end
+  width = math.min(math.max(width, 30), vim.o.columns - 4)
+  local height = math.max(1, math.min(#lines, 15, vim.o.lines - 6))
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].bufhidden = "wipe"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    row = math.max(0, math.floor((vim.o.lines - height - 2) / 2)),
+    style = "minimal",
+    border = "rounded",
+    title = opts.prompt and (" " .. opts.prompt .. " ") or nil,
+    title_pos = "center",
+  })
+  vim.wo[win].winhl = "Normal:Normal,FloatBorder:ReviewrPanelBorder,CursorLine:ReviewrButton"
+  vim.wo[win].cursorline = true
+  local done = false
+  local function finish(choice)
+    if done then return end
+    done = true
+    if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+    on_choice(choice)
+  end
+  local function map(keys, fn)
+    for _, key in ipairs(keys) do
+      vim.keymap.set("n", key, fn, { buffer = buf, silent = true, nowait = true })
+    end
+  end
+  map({ "<CR>" }, function() finish(items[vim.fn.line(".")]) end)
+  map({ "<Esc>", "q" }, function() finish(nil) end)
+  vim.api.nvim_create_autocmd("WinLeave", { buffer = buf, once = true, callback = function() finish(nil) end })
+  return win
+end
+
 -- ---------- help ----------
 local help_state = { win = nil, buf = nil }
 
