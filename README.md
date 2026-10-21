@@ -6,6 +6,8 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 
 ![Every key, behind `?`.](assets/keys.png)
 
+![Adding a comment: `c` on a line opens the prompt, and the comment lands above that line.](assets/comment.png)
+
 ## Features
 
 - Four diff scopes: uncommitted, staged, branch, commits, plus a private-ref **last turn** baseline
