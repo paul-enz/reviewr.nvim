@@ -1,6 +1,6 @@
 ---
 name: reviewr-nvim
-description: Open a reviewr.nvim code review in Neovim for the user — a branch, two refs, staged or uncommitted changes — beside the agent's terminal, drive a review that is already open, and act on the review comments the plugin pastes back. Use when the user asks to review, diff or look over changes in Neovim, to "open the reviewer", or to compare branches, and when a message arrives wrapped in @@REVIEW_BEGIN / @@REVIEW_END.
+description: Open a reviewr.nvim code review in Neovim for the user (a branch, two refs, staged or uncommitted changes) beside the agent's terminal, drive a review that is already open, and act on the review comments the plugin pastes back. Use when the user asks to review, diff or look over changes in Neovim, to "open the reviewer", or to compare branches, and when a message arrives wrapped in @@REVIEW_BEGIN / @@REVIEW_END.
 ---
 
 # reviewr.nvim

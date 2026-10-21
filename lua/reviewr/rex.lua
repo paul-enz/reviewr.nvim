@@ -1,4 +1,4 @@
--- reviewr.rex — Rex integration: every terminal in one round trip, focus,
+-- reviewr.rex: Rex integration: every terminal in one round trip, focus,
 -- input, and the program status agents report while they work.
 local M = {}
 

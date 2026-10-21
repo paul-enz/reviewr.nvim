@@ -1,4 +1,4 @@
--- reviewr.ui — review tab, diff windows, changed-files panel, signs, extmarks, floats
+-- reviewr.ui: review tab, diff windows, changed-files panel, signs, extmarks, floats
 local M = {}
 
 local state = {
@@ -399,7 +399,7 @@ function M.toggle_help(legend)
     return false
   end
   legend = legend or require("reviewr.keymaps").legend
-  local lines = { " reviewr — keys", "" }
+  local lines = { " reviewr: keys", "" }
   local width = 28
   for _, row in ipairs(legend) do
     local key = " " .. row[1] .. string.rep(" ", math.max(1, 5 - vim.fn.strwidth(row[1])))

@@ -1,6 +1,6 @@
 # reviewr.nvim
 
-A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.com/persiyanov/herdr-reviewr)-style code review to Neovim: open a diff of two branches, comment on lines or ranges, and send the whole review to a running coding agent (Claude Code, Codex, OpenCode, Aider, …) — entirely from inside Neovim.
+A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.com/persiyanov/herdr-reviewr)-style code review to Neovim: open a diff of two branches, comment on lines or ranges, and send the whole review to a running coding agent (Claude Code, Codex, OpenCode, Aider, …), entirely from inside Neovim.
 
 ![reviewr.nvim reviewing a branch: the base on the left, the change on the right with two line comments above the lines they're about, every changed file listed along the bottom, and the bar above the change saying what to do next.](assets/screenshot.png)
 
@@ -13,9 +13,9 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 ## Features
 
 - A review tab of its own: side-by-side native Vim diff (`]c`/`[c`, folds) over a **changed-files panel** along the bottom, like an octo.nvim review
-- Scopes: uncommitted, staged, branch (everything on the branch, committed or not, against its merge base with the default branch), and **turn** — what changed since the last turn baseline
+- Scopes: uncommitted, staged, branch (everything on the branch, committed or not, against its merge base with the default branch), and **turn**: what changed since the last turn baseline
 - Diffs cover files git tracks: commits, edits to tracked files, and new files once `git add`ed; untracked files are left out
-- Line comments on a line or range, anchored by identity (file, side, start, end) — never row index; each records the content its side showed (a commit, the index or the working tree) and shows only in views of that content
+- Line comments on a line or range, anchored by identity (file, side, start, end), never row index; each records the content its side showed (a commit, the index or the working tree) and shows only in views of that content
 - In-memory comment store by design (ephemeral; close drops them, and asks first while any is unsent)
 - All-or-none export: clipboard, agent send, or filesystem inbox
 - Mux-agnostic send to a running agent: Neovim `:terminal` → tmux → Rex → WezTerm → inbox → clipboard

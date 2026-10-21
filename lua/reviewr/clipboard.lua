@@ -1,4 +1,4 @@
--- reviewr.clipboard — copy to the user's clipboard, even when Neovim runs on
+-- reviewr.clipboard: copy to the user's clipboard, even when Neovim runs on
 -- another machine: in Rex or over SSH the text also goes out as OSC 52, which
 -- the terminal (Rex forwards it to the app) puts on the local clipboard.
 local M = {}

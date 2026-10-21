@@ -1,4 +1,4 @@
--- reviewr.keymaps — buffer-local defaults, remappable
+-- reviewr.keymaps: buffer-local defaults, remappable
 local M = {}
 
 M.defaults = {

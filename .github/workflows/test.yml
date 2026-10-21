@@ -5,7 +5,7 @@ name: test
 # else's pull request runs when the owner comments /ok-to-test on it, which
 # tests the commit the pull request pointed at when the comment was made.
 # Comment-triggered runs use this file as it is on main, so a pull request
-# can't change the gate.
+# can't change the gate. Every gated run also scans the history for secrets.
 
 on:
   push:
@@ -95,10 +95,47 @@ jobs:
           version: ${{ matrix.neovim }}
       - run: nvim --headless -u NONE -l tests/run.lua
 
+  # Fails if any commit up to the tested one holds a secret.
+  gitleaks:
+    needs: target
+    concurrency:
+      group: gitleaks-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
+      cancel-in-progress: true
+    runs-on: [self-hosted, Linux, X64, proxmox, sabana]
+    timeout-minutes: 5
+    steps:
+      # the first checkout brings the setup-git action; with git installed, the
+      # second fetches the history gitleaks reads
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: |
+          set -euo pipefail
+          version=8.24.3
+          sha256=9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+          dir="${RUNNER_TEMP:-/tmp}/gitleaks"
+          mkdir -p "$dir"
+          curl -fsSL -o "$dir/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          actual=$(sha256sum "$dir/gitleaks.tar.gz" | cut -d' ' -f1)
+          if [ "$actual" != "$sha256" ]; then
+            echo "checksum mismatch for gitleaks.tar.gz: expected $sha256, got $actual" >&2
+            exit 1
+          fi
+          tar -xzf "$dir/gitleaks.tar.gz" -C "$dir" gitleaks
+          "$dir/gitleaks" detect --source . --redact=100 --exit-code=1 --no-banner
+
   # A comment-triggered run isn't attached to the pull request's commit, so
   # its result goes there as a commit status.
   report:
-    needs: [target, test]
+    needs: [target, test, gitleaks]
     if: ${{ always() && github.event_name == 'issue_comment' && needs.target.result == 'success' }}
     runs-on: [self-hosted, Linux, X64, proxmox, sabana]
     timeout-minutes: 2
@@ -109,10 +146,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.target.outputs.sha }}
           RESULT: ${{ needs.test.result }}
+          SCAN: ${{ needs.gitleaks.result }}
         run: |
           set -euo pipefail
           state=failure
-          if [ "$RESULT" = success ]; then state=success; fi
+          if [ "$RESULT" = success ] && [ "$SCAN" = success ]; then state=success; fi
           curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/statuses/$SHA" \
             -d "{\"state\":\"$state\",\"context\":\"test (ok-to-test)\",\"target_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}" >/dev/null

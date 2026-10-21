@@ -112,7 +112,7 @@ local function rex_cand(t, repo_root)
   return {
     id = t.block_id,
     transport = "rex",
-    label = string.format("%s — %s (%s)", name, title, t.session_label or t.session_id),
+    label = string.format("%s: %s (%s)", name, title, t.session_label or t.session_id),
     conf = here and (own and 0.88 or 0.86) or 0.6,
     state = t.state,
     own = own,
