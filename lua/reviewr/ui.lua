@@ -1,4 +1,4 @@
--- reviewr.ui — diff buffers, windows, signs, extmarks, floating review panel
+-- reviewr.ui — review tab, diff windows, changed-files panel, signs, extmarks, floats
 local M = {}
 
 local state = {
@@ -8,18 +8,12 @@ local state = {
   diff = {},
 }
 
-local defaults = {
+M.config = {
   panel_width = 60,
   panel_height = 20,
+  files_panel_height = 10,
   border = "rounded",
-  signs = {
-    comment  = { text = "💬", texthl = "ReviewrCommentSign", priority = 10 },
-    pending  = { text = "●",  texthl = "ReviewrPendingSign",  priority = 9  },
-    resolved = { text = "✓",  texthl = "ReviewrResolvedSign", priority = 8  },
-  },
 }
-
-M.config = vim.deepcopy(defaults)
 
 local function ensure_ns()
   if not state.ns then
@@ -28,163 +22,247 @@ local function ensure_ns()
   return state.ns
 end
 
-local function hl(name, opts)
-  vim.api.nvim_set_hl(0, name, opts)
+local function valid_win(w)
+  return w ~= nil and vim.api.nvim_win_is_valid(w)
+end
+
+local function highlights()
+  for name, link in pairs({
+    ReviewrCommentSign = "DiagnosticInfo",
+    ReviewrCommentText = "Comment",
+    ReviewrPanelBorder = "FloatBorder",
+    ReviewrRange = "Visual",
+  }) do
+    vim.api.nvim_set_hl(0, name, { link = link, default = true })
+  end
 end
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
   ensure_ns()
-  hl("ReviewrCommentSign",  { fg = "#7aa2f7", bold = true })
-  hl("ReviewrPendingSign",  { fg = "#e0af68", bold = true })
-  hl("ReviewrResolvedSign", { fg = "#9ece6a", bold = true })
-  hl("ReviewrPanelTitle",   { fg = "#bb9af7", bold = true })
-  hl("ReviewrPanelBorder",  { fg = "#414868" })
-  hl("ReviewrCommentText",  { fg = "#c0caf5" })
-  hl("ReviewrCommentFile",  { fg = "#7dcfff", bold = true })
-  hl("ReviewrRange",       { bg = "#3b4261" })
-  for _, s in pairs(M.config.signs) do
-    vim.fn.sign_define(s.text and ("Reviewr" .. s.text) or "ReviewrSign", {
-      text = s.text, texthl = s.texthl,
-    })
-  end
+  highlights()
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = vim.api.nvim_create_augroup("reviewr_highlights", { clear = true }),
+    callback = highlights,
+  })
 end
 
--- ---------- diff buffers / windows ----------
-function M.open_diff(left_buf, right_buf, opts)
-  opts = opts or {}
-  -- current window becomes the left (base) pane
+-- ---------- review tab ----------
+
+function M.is_open()
+  return state.diff.tab ~= nil and vim.api.nvim_tabpage_is_valid(state.diff.tab)
+    and valid_win(state.diff.left_win) and valid_win(state.diff.right_win)
+end
+
+-- A tab of its own, so the review never rearranges the user's windows.
+function M.open_tab()
+  vim.cmd("tabnew")
+  local placeholder = vim.api.nvim_get_current_buf()
+  vim.bo[placeholder].bufhidden = "wipe"
   local left_win = vim.api.nvim_get_current_win()
-  if left_buf then vim.api.nvim_win_set_buf(left_win, left_buf) end
-  vim.cmd("diffthis")
   vim.cmd("rightbelow vsplit")
   local right_win = vim.api.nvim_get_current_win()
-  if right_buf then vim.api.nvim_win_set_buf(right_win, right_buf) end
-  vim.cmd("diffthis")
-  -- titles
-  pcall(function()
-    vim.wo[left_win].winbar = "  base  "
-    vim.wo[right_win].winbar = "  feature  "
-  end)
-  state.diff = { left_win = left_win, right_win = right_win, left_buf = left_buf, right_buf = right_buf, file = opts.file }
+  state.diff = { tab = vim.api.nvim_get_current_tabpage(), left_win = left_win, right_win = right_win }
   return state.diff
 end
 
-function M.mark_range(bufnr, startl, endl)
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local ns = ensure_ns()
-  vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
-  local last = vim.api.nvim_buf_line_count(bufnr)
-  for line = startl, math.min(endl, last) do
-    pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, line - 1, 0, {
-      end_row = line, hl_eol = true, line_hl_group = "ReviewrRange", priority = 50,
-    })
-  end
+function M.focus_tab()
+  if M.is_open() then vim.api.nvim_set_current_tabpage(state.diff.tab) end
 end
 
-function M.clear_range(bufnr)
-  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-    vim.api.nvim_buf_clear_namespace(bufnr, ensure_ns(), 0, -1)
+function M.show_file(left_buf, right_buf, file)
+  local d = state.diff
+  -- the hint lives in the winbar: statusline plugins such as lualine own the footer
+  local bars = { "  base  ", "%!v:lua.require('reviewr.ui').winbar()" }
+  for i, pair in ipairs({ { d.left_win, left_buf }, { d.right_win, right_buf } }) do
+    vim.api.nvim_win_call(pair[1], function()
+      vim.api.nvim_win_set_buf(pair[1], pair[2])
+      vim.cmd("diffthis")
+    end)
+    vim.wo[pair[1]].winbar = bars[i]
   end
+  d.left_buf, d.right_buf, d.file = left_buf, right_buf, file
+  return d
 end
 
 function M.panes()
   return state.diff
 end
 
--- The diff window that is not the current one: where the comment box opens,
--- the way octo.nvim opens its thread buffer in the alternate pane.
+-- The diff window that is not the current one: where the comment box opens.
 function M.alternate_win()
   local d = state.diff
-  local cur = vim.api.nvim_get_current_win()
-  if cur == d.right_win and d.left_win and vim.api.nvim_win_is_valid(d.left_win) then
+  if vim.api.nvim_get_current_win() == d.right_win and valid_win(d.left_win) then
     return d.left_win
   end
-  if d.right_win and vim.api.nvim_win_is_valid(d.right_win) and cur ~= d.right_win then
-    return d.right_win
-  end
+  if valid_win(d.right_win) then return d.right_win end
   return d.left_win
 end
 
 function M.close_diff()
-  for _, w in ipairs({ state.diff.left_win, state.diff.right_win }) do
-    if w and vim.api.nvim_win_is_valid(w) then
-      pcall(vim.api.nvim_win_close, w, true)
+  local tab = state.diff.tab
+  state.diff = {}
+  if not (tab and vim.api.nvim_tabpage_is_valid(tab)) then return end
+  -- wiping buffers still in diff mode as the tab closes can crash Neovim
+  vim.api.nvim_set_current_tabpage(tab)
+  vim.cmd("diffoff!")
+  if #vim.api.nvim_list_tabpages() == 1 then vim.cmd("tabnew") end
+  vim.cmd("tabclose " .. vim.api.nvim_tabpage_get_number(tab))
+end
+
+-- ---------- changed-files panel ----------
+-- A list of every changed file along the bottom, the way octo.nvim shows one
+-- during a review. <CR> opens the file under the cursor.
+local files_panel = { win = nil, buf = nil, files = {} }
+
+function M.files_panel()
+  return files_panel
+end
+
+function M.render_files_panel()
+  local buf = files_panel.buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local store = require("reviewr.store")
+  local current, lines = nil, {}
+  for i, f in ipairs(files_panel.files) do
+    local here = f.path == state.diff.file
+    if here then current = i end
+    local n = store.count({ file = f.path })
+    lines[i] = string.format("%s %s  %s%s", here and "▶" or " ", f.status, f.path, n > 0 and ("  💬 " .. n) or "")
+  end
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  if valid_win(files_panel.win) then
+    vim.wo[files_panel.win].winbar = string.format("  changed files (%d)  ", #files_panel.files)
+    if current then pcall(vim.api.nvim_win_set_cursor, files_panel.win, { current, 0 }) end
+  end
+end
+
+function M.open_files_panel(files)
+  files_panel.files = files or files_panel.files
+  if not valid_win(files_panel.win) then
+    local origin = vim.api.nvim_get_current_win()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].filetype = "reviewr-files"
+    local height = math.max(2, math.min(#files_panel.files, M.config.files_panel_height)) + 1
+    vim.api.nvim_win_call(state.diff.left_win, function() vim.cmd("botright " .. height .. "split") end)
+    local win = vim.fn.win_getid(vim.fn.winnr("$"), vim.api.nvim_tabpage_get_number(state.diff.tab))
+    vim.api.nvim_win_set_buf(win, buf)
+    for opt, val in pairs({ diff = false, scrollbind = false, cursorbind = false, foldenable = false,
+      foldcolumn = "0", winfixheight = true, cursorline = true, number = false,
+      relativenumber = false, signcolumn = "no", wrap = false }) do
+      vim.wo[win][opt] = val
+    end
+    files_panel.win, files_panel.buf = win, buf
+    local function map(lhs, fn)
+      vim.keymap.set("n", lhs, fn, { buffer = buf, silent = true, nowait = true })
+    end
+    map("<CR>", function()
+      local f = files_panel.files[vim.fn.line(".")]
+      if not f then return end
+      require("reviewr").open_file(f.path)
+      if valid_win(state.diff.right_win) then vim.api.nvim_set_current_win(state.diff.right_win) end
+    end)
+    map("q", function() require("reviewr.keymaps").quit() end)
+    if valid_win(origin) then vim.api.nvim_set_current_win(origin) end
+  end
+  M.render_files_panel()
+end
+
+-- ---------- range highlight while commenting ----------
+
+function M.mark_range(bufnr, startl, endl)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local last = vim.api.nvim_buf_line_count(bufnr)
+  for line = startl, math.min(endl, last) do
+    pcall(vim.api.nvim_buf_set_extmark, bufnr, ensure_ns(), line - 1, 0, {
+      line_hl_group = "ReviewrRange", priority = 50,
+    })
+  end
+end
+
+function M.clear_range(bufnr)
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then M.redraw(bufnr) end
+end
+
+-- ---------- comments in the diff ----------
+
+function M.redraw(bufnr)
+  if bufnr == nil then
+    for _, b in ipairs({ state.diff.left_buf, state.diff.right_buf }) do
+      if b then M.redraw(b) end
+    end
+    return
+  end
+  if not vim.api.nvim_buf_is_valid(bufnr) then return end
+  vim.api.nvim_buf_clear_namespace(bufnr, ensure_ns(), 0, -1)
+  local file, side = vim.b[bufnr].reviewr_file, vim.b[bufnr].reviewr_side
+  if file then
+    local last = vim.api.nvim_buf_line_count(bufnr)
+    for _, c in ipairs(require("reviewr.store").ordered({ file = file, side = side })) do
+      local row = math.min(c.start, last) - 1
+      pcall(vim.api.nvim_buf_set_extmark, bufnr, ensure_ns(), row, 0, {
+        sign_text = "💬",
+        sign_hl_group = "ReviewrCommentSign",
+        virt_lines = vim.tbl_map(function(l) return { { "  " .. l, "ReviewrCommentText" } } end,
+          vim.split(c.body or "", "\n", { plain = true })),
+        -- Neovim draws nothing above the first line, so that one goes below
+        virt_lines_above = row > 0,
+      })
     end
   end
-  state.diff = {}
+  M.render_files_panel()
+  pcall(vim.cmd, "redrawstatus!")
 end
 
--- ---------- signs ----------
-function M.place_sign(bufnr, lnum, name, priority)
-  bufnr = bufnr or 0
-  if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
-  local sign_name = "Reviewr" .. (name or "comment")
-  -- ensure defined
-  pcall(vim.fn.sign_define, sign_name, { text = name == "pending" and "●" or (name == "resolved" and "✓" or "💬"), texthl = "Reviewr" .. (name or "comment"):gsub("^%l", string.upper) .. "Sign" })
-  return vim.fn.sign_place(0, "reviewr", sign_name, bufnr, { lnum = lnum, priority = priority or 10 })
+-- The comment under the cursor, if the cursor sits inside its range.
+function M.comment_at_cursor()
+  local file = vim.b.reviewr_file
+  if not file then return nil end
+  local lnum = vim.fn.line(".")
+  for _, c in ipairs(require("reviewr.store").ordered({ file = file, side = vim.b.reviewr_side })) do
+    if lnum >= c.start and lnum <= c["end"] then return c end
+  end
+  return nil
 end
 
-function M.clear_signs(bufnr)
-  bufnr = bufnr or 0
-  if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
-  vim.fn.sign_unplace("reviewr", { buffer = bufnr })
-end
+-- ---------- comment list ----------
 
--- ---------- extmarks / comment gutter ----------
-function M.set_extmark(bufnr, line, text, opts)
-  bufnr = bufnr or 0
-  if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
-  opts = opts or {}
-  local ns = ensure_ns()
-  local body = "  " .. (text or ""):gsub("^%s+", "")
-  return vim.api.nvim_buf_set_extmark(bufnr, ns, math.max((line or 1) - 1, 0), 0, {
-    virt_lines = { { { body, "ReviewrCommentText" } } },
-    virt_lines_above = true,
-    priority = opts.priority or 10,
-  })
-end
-
-function M.clear_extmarks(bufnr)
-  bufnr = bufnr or 0
-  if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
-  vim.api.nvim_buf_clear_namespace(bufnr, ensure_ns(), 0, -1)
-end
-
--- ---------- floating review panel ----------
-function M.toggle_panel(items)
-  if state.panel_win and vim.api.nvim_win_is_valid(state.panel_win) then
+function M.toggle_panel()
+  if valid_win(state.panel_win) then
     vim.api.nvim_win_close(state.panel_win, true)
-    state.panel_win = nil
-    state.panel_buf = nil
+    state.panel_win, state.panel_buf = nil, nil
     return false
   end
-  state.panel_buf = vim.api.nvim_create_buf(false, true)
-  local lines = { " reviewr — review panel ", " ────────────────────────────" }
-  for _, it in ipairs(items or {}) do
-    lines[#lines + 1] = string.format(" %s  %s:%d", it.status or "○", it.file or "?", it.line or 0)
-    if it.body then
-      lines[#lines + 1] = "   └ " .. tostring(it.body):gsub("\n", " ")
-    end
+  local lines = {}
+  for _, c in ipairs(require("reviewr.store").ordered()) do
+    lines[#lines + 1] = string.format(" %s:%d (%s)", c.file, c.start, c.side)
+    lines[#lines + 1] = "   └ " .. (c.body or ""):gsub("\n", " ")
   end
-  if #lines == 2 then lines[#lines + 1] = "   (no comments)" end
+  if #lines == 0 then lines[1] = "   (no comments)" end
+  state.panel_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(state.panel_buf, 0, -1, false, lines)
   vim.bo[state.panel_buf].modifiable = false
-  vim.bo[state.panel_buf].buftype = "nofile"
-  local width = M.config.panel_width
-  local height = math.min(M.config.panel_height, #lines)
+  vim.bo[state.panel_buf].bufhidden = "wipe"
+  local width = math.min(M.config.panel_width, vim.o.columns - 4)
   state.panel_win = vim.api.nvim_open_win(state.panel_buf, true, {
     relative = "editor",
     width = width,
-    height = height,
+    height = math.min(M.config.panel_height, #lines),
     col = vim.o.columns - width - 2,
     row = 1,
     style = "minimal",
     border = M.config.border,
-    title = " reviewr ",
+    title = " comments ",
     title_pos = "center",
   })
   vim.wo[state.panel_win].winhl = "Normal:Normal,FloatBorder:ReviewrPanelBorder"
+  for _, key in ipairs({ "l", "q", "<esc>" }) do
+    vim.keymap.set("n", key, M.toggle_panel, { buffer = state.panel_buf, silent = true, nowait = true })
+  end
   return true
 end
 
@@ -192,7 +270,7 @@ end
 local help_state = { win = nil, buf = nil }
 
 function M.toggle_help(legend)
-  if help_state.win and vim.api.nvim_win_is_valid(help_state.win) then
+  if valid_win(help_state.win) then
     vim.api.nvim_win_close(help_state.win, true)
     help_state.win, help_state.buf = nil, nil
     return false
@@ -210,7 +288,7 @@ function M.toggle_help(legend)
   help_state.buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(help_state.buf, 0, -1, false, lines)
   vim.bo[help_state.buf].modifiable = false
-  vim.bo[help_state.buf].buftype = "nofile"
+  vim.bo[help_state.buf].bufhidden = "wipe"
   help_state.win = vim.api.nvim_open_win(help_state.buf, true, {
     relative = "editor",
     width = width,
@@ -230,11 +308,9 @@ function M.toggle_help(legend)
   return true
 end
 
-function M.set_statusline(str)
-  vim.o.statusline = str or "%!v:lua.require('reviewr.ui').statusline()"
-end
+-- ---------- hint bar ----------
 
--- The footer says the next useful step, the way herdr-reviewr's does.
+-- The bar says the next useful step, the way herdr-reviewr's footer does.
 function M.hint(count)
   if (count or 0) == 0 then
     return "c  comment on this line    ?  all keys"
@@ -242,62 +318,16 @@ function M.hint(count)
   return "s  send to agent    y  copy    ?  all keys"
 end
 
-function M.statusline()
-  local n = 0
-  local ok, store = pcall(require, "reviewr.store")
-  local scope_ok, scope = pcall(require, "reviewr.scope")
-  if ok and store.count then
-    local q = {}
-    if scope_ok and scope.get and scope.get() then q.scope = scope.get().name end
-    n = store.count(q) or 0
-  end
-  local label = " reviewr "
-  local s = scope_ok and scope.get and scope.get()
-  if s and s.name then label = label .. "│ " .. s.name .. " " end
-  local left = label .. "│ " .. n .. (n == 1 and " comment" or " comments")
-  local right = M.hint(n)
-  local width = math.floor(vim.o.columns / math.max(1, #vim.api.nvim_tabpage_list_wins(0)))
-  local gap = math.max(2, width - vim.fn.strwidth(left) - vim.fn.strwidth(right))
+function M.winbar()
+  local n = require("reviewr.store").count()
+  local s = require("reviewr.scope").get()
+  local left = "  change " .. (s and s.name and ("│ " .. s.name .. " ") or "")
+    .. "│ " .. n .. (n == 1 and " comment" or " comments")
+  local right = M.hint(n) .. " "
+  local width = vim.api.nvim_win_get_width(vim.g.statusline_winid or 0)
+  local gap = width - vim.fn.strwidth(left) - vim.fn.strwidth(right)
+  if gap < 2 then return left end
   return left .. string.rep(" ", gap) .. right
 end
 
-function M.refresh_status()
-  vim.o.statusline = "%!v:lua.require('reviewr.ui').statusline()"
-  pcall(vim.cmd, "redrawstatus")
-end
-
-function M.redraw(bufnr)
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
-  if not vim.api.nvim_buf_is_valid(bufnr) then return end
-  M.clear_signs(bufnr)
-  M.clear_extmarks(bufnr)
-  local ok, store = pcall(require, "reviewr.store")
-  if not ok then return end
-  local name = vim.api.nvim_buf_get_name(bufnr)
-  for _, c in ipairs(store.ordered()) do
-    local mine = c.file and (name == "" or name:sub(-#c.file) == c.file)
-    if mine and not c.orphaned then
-      M.place_sign(bufnr, c.start, "comment")
-      M.set_extmark(bufnr, c.start, "💬  " .. (c.body or ""))
-    end
-  end
-  M.refresh_status()
-end
-
--- The comment under the cursor, if the cursor sits on its line.
-function M.comment_at_cursor()
-  local ok, store = pcall(require, "reviewr.store")
-  if not ok then return nil end
-  local lnum = vim.fn.line(".")
-  local name = vim.api.nvim_buf_get_name(0)
-  for _, c in ipairs(store.ordered()) do
-    if c.start == lnum and c.file and name:sub(-#c.file) == c.file then return c end
-  end
-  return nil
-end
-
--- aliases for common / expected names
-M.toggle = M.toggle_panel
-M.toggle_review_panel = M.toggle_panel
-M.float_panel = M.toggle_panel
 return M

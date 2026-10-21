@@ -7,8 +7,11 @@ local levels = { debug = 10, info = 20, warn = 30, error = 40 }
 
 local function validate(opts)
   opts = opts or {}
-  if opts.baseline_trigger and not vim.tbl_contains({ "open", "first_comment", "manual", "bufwrite" }, opts.baseline_trigger) then
+  if opts.baseline_trigger and not vim.tbl_contains({ "open", "first_comment", "manual" }, opts.baseline_trigger) then
     error("reviewr: invalid baseline_trigger " .. tostring(opts.baseline_trigger))
+  end
+  if opts.send_mode and not vim.tbl_contains({ "queue", "submit" }, opts.send_mode) then
+    error("reviewr: invalid send_mode " .. tostring(opts.send_mode))
   end
   if opts.log_level and not levels[opts.log_level] then
     error("reviewr: invalid log_level " .. tostring(opts.log_level))

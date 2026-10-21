@@ -6,10 +6,11 @@ local state = require("reviewr.state")
 local scope_mod = require("reviewr.scope")
 local git = require("reviewr.git")
 local turn = require("reviewr.turn")
-local anchor = require("reviewr.anchor")
 
 local M = {}
 local setup_done = false
+
+local SCOPES = { "uncommitted", "staged", "branch", "turn" }
 
 local function root()
   return git.git_root(vim.fn.getcwd()) or vim.fn.getcwd()
@@ -20,12 +21,21 @@ function M.setup(opts)
   if setup_done then return M end
   setup_done = true
   log.info("setup")
-  -- commands
+  require("reviewr.ui").setup()
   vim.api.nvim_create_user_command("ReviewrOpen", function(o) M.open(o.fargs) end, { nargs = "*" })
-  vim.api.nvim_create_user_command("ReviewrScope", function(o) M.set_scope(o.args) end, { nargs = "?" })
-  vim.api.nvim_create_user_command("ReviewrComment", function(o) M.add_comment({ body = o.args }) end, { nargs = "?" })
+  vim.api.nvim_create_user_command("ReviewrScope", function(o) M.set_scope(o.args) end, {
+    nargs = 1,
+    complete = function() return SCOPES end,
+  })
+  vim.api.nvim_create_user_command("ReviewrComment", function(o)
+    M.add_comment({ body = o.args, start = o.line1, ["end"] = o.line2 })
+    require("reviewr.ui").redraw()
+  end, { nargs = "+", range = true })
   vim.api.nvim_create_user_command("ReviewrTurn", function() M.mark_turn() end, {})
-  vim.api.nvim_create_user_command("ReviewrExport", function(o) M.export(o.args ~= "" and o.args or nil) end, { nargs = "?" })
+  vim.api.nvim_create_user_command("ReviewrExport", function(o) M.export(o.args ~= "" and o.args or nil) end, {
+    nargs = "?",
+    complete = function() return { "clipboard", "send", "inbox" } end,
+  })
   vim.api.nvim_create_user_command("ReviewrClear", function() M.clear() end, {})
   vim.api.nvim_create_autocmd("TabClosed", {
     callback = function(args)
@@ -37,114 +47,175 @@ function M.setup(opts)
   return M
 end
 
+-- ref: a commit-ish, ":" for the index, nil for the working tree.
+local function buf_from_ref(repo, ref, path, side)
+  local buf = vim.api.nvim_create_buf(false, true)
+  local lines = {}
+  if ref == nil then
+    local full = repo .. "/" .. path
+    if vim.fn.filereadable(full) == 1 then lines = vim.fn.readfile(full) end
+  else
+    lines = git.show((ref == ":" and ":" or (ref .. ":")) .. path, repo) or {}
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].modifiable = false
+  vim.b[buf].reviewr_file = path
+  vim.b[buf].reviewr_side = side
+  local ft = vim.filetype.match({ filename = path }) or ""
+  if ft ~= "" then vim.bo[buf].filetype = ft end
+  return buf
+end
+
+local function changed_files(repo, base_ref, head_ref)
+  local args = { "diff", "--name-status", base_ref }
+  if head_ref == ":" then
+    args = { "diff", "--name-status", "--cached", base_ref }
+  elseif head_ref then
+    args = { "diff", "--name-status", base_ref, head_ref }
+  end
+  local files = {}
+  for _, l in ipairs(git.run_sync(args, { cwd = repo }).stdout or {}) do
+    local fields = vim.split(l, "\t", { plain = true })
+    if #fields >= 2 then
+      table.insert(files, { status = fields[1]:sub(1, 1), path = fields[#fields] })
+    end
+  end
+  return files
+end
+
+local function default_branch(repo)
+  local r = git.run_sync({ "rev-parse", "--abbrev-ref", "origin/HEAD" }, { cwd = repo })
+  if r.ok and r.stdout[1] and r.stdout[1] ~= "origin/HEAD" then return r.stdout[1] end
+  for _, b in ipairs({ "main", "master" }) do
+    if git.rev_parse(b, repo) then return b end
+  end
+  return nil
+end
+
+-- The (base, head) pair a scope compares.
+local function scope_refs(repo, name)
+  if name == "uncommitted" then return "HEAD", nil end
+  if name == "staged" then return "HEAD", ":" end
+  if name == "turn" then
+    local sha = turn.last_turn_sha(repo, { name = "turn" })
+    if not sha then return nil, nil, "no turn marked yet; run :ReviewrTurn" end
+    return sha, nil
+  end
+  if name == "branch" then
+    local base = default_branch(repo)
+    if not base then return nil, nil, "no default branch found" end
+    return base, "HEAD"
+  end
+  return nil, nil, "unknown scope " .. tostring(name)
+end
+
+function M.open_file(path)
+  local s = state.get()
+  if not s or not s.files then return false end
+  local ui = require("reviewr.ui")
+  local left = buf_from_ref(s.repo, s.base_ref, path, "left")
+  local right = buf_from_ref(s.repo, s.head_ref, path, "right")
+  ui.show_file(left, right, path)
+  local km = config_mod.get().keymaps
+  if km then
+    local keymaps = require("reviewr.keymaps")
+    keymaps.apply(left, type(km) == "table" and km or nil)
+    keymaps.apply(right, type(km) == "table" and km or nil)
+  end
+  ui.redraw(left)
+  ui.redraw(right)
+  ui.open_files_panel(s.files)
+  return true
+end
+
+-- Loads the session's file list and shows `prefer` (or the first file).
+local function load(prefer)
+  local s = state.get()
+  s.files = changed_files(s.repo, s.base_ref, s.head_ref)
+  if #s.files == 0 then
+    vim.notify("reviewr: no changes found", vim.log.levels.INFO)
+    return false
+  end
+  local target = s.files[1].path
+  for _, f in ipairs(s.files) do if f.path == prefer then target = prefer; break end end
+  return M.open_file(target)
+end
+
+local function start(repo, base_ref, head_ref, scope_name)
+  -- the left pane shows the merge base, so a moving base branch adds no noise
+  if head_ref and head_ref ~= ":" then
+    local mb = git.run_sync({ "merge-base", base_ref, head_ref }, { cwd = repo })
+    if mb.ok and mb.stdout[1] then base_ref = mb.stdout[1] end
+  end
+  if #changed_files(repo, base_ref, head_ref) == 0 then
+    vim.notify("reviewr: no changes found", vim.log.levels.INFO)
+    return false
+  end
+  local ui = require("reviewr.ui")
+  local cur = vim.api.nvim_buf_get_name(0)
+  local prefer = vim.startswith(cur, repo .. "/") and cur:sub(#repo + 2) or ui.panes().file
+  if ui.is_open() then ui.focus_tab() else ui.open_tab() end
+  scope_mod.set({ repo = repo, name = scope_name, ref = head_ref or "WORKTREE" })
+  local s = state.ensure()
+  s.repo, s.base_ref, s.head_ref, s.scope = repo, base_ref, head_ref, scope_mod.get()
+  if not load(prefer) then return false end
+  if config_mod.get().baseline_trigger == "open" then turn.mark_turn({ repo = repo, scope = { name = "turn" } }) end
+  events.emit("Opened", { repo = repo, scope = scope_mod.get(), file = ui.panes().file, files = s.files })
+  log.info("opened " .. repo .. " (" .. #s.files .. " files)")
+  return true
+end
+
 function M.open(args)
-  if type(args) == "string" then args = vim.split(args, "%s+") end
+  if type(args) == "string" then args = vim.split(args, "%s+", { trimempty = true }) end
   if type(args) ~= "table" then args = {} end
   local repo = root()
   local base_ref = args[1] or "HEAD"
   local head_ref = args[2] -- nil => working tree
   local scope_name = args[3] or (head_ref and "branch" or "uncommitted")
-
-  -- changed files
-  local diff_args = head_ref and { "diff", "--name-only", base_ref .. "..." .. head_ref } or { "diff", "--name-only", base_ref }
-  local r = git.run_sync(diff_args, { cwd = repo })
-  local out = r.stdout
-  local files = vim.tbl_filter(function(s) return s ~= "" end, out or {})
-  if #files == 0 then
-    vim.notify("reviewr: no changes found", vim.log.levels.INFO)
-    return false
-  end
-  -- pick file
-  local target_file = nil
-  local cur = vim.api.nvim_buf_get_name(0)
-  if cur ~= "" then
-    local rel = cur:sub(#repo + 2)
-    for _, f in ipairs(files) do if f == rel then target_file = f; break end end
-  end
-  target_file = target_file or files[1]
-
-  local ui = require("reviewr.ui")
-  local function buf_from_ref(ref, path)
-    local buf = vim.api.nvim_create_buf(false, true)
-    local lines = {}
-    if ref == nil then
-      -- working tree: read from disk
-      local full = repo .. "/" .. path
-      lines = vim.fn.readfile(full)
-    else
-      local content = git.show(ref .. ":" .. path, repo)
-      if type(content) == "table" then lines = content
-      elseif type(content) == "string" then lines = vim.split(content, "\n", { plain = true }) end
-    end
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].buftype = "nofile"
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].modifiable = false
-    local ft = vim.filetype.match({ filename = path }) or ""
-    if ft ~= "" then vim.bo[buf].filetype = ft end
-    return buf
-  end
-
-  local left = buf_from_ref(base_ref, target_file)
-  local right = buf_from_ref(head_ref, target_file)
-  ui.open_diff(left, right, { file = target_file, repo = repo })
-  require("reviewr.keymaps").apply(left)
-  require("reviewr.keymaps").apply(right)
-  ui.set_statusline()
-
-  scope_mod.set({ repo = repo, name = scope_name, ref = head_ref or "WORKTREE" })
-  state.ensure()
-  local trigger = config_mod.get().baseline_trigger
-  if trigger == "open" then turn.mark_turn({ repo = repo, scope = scope_mod.get() }) end
-  events.emit("Opened", { repo = repo, scope = scope_mod.get(), file = target_file, files = files })
-  log.info("opened " .. repo .. " (" .. #files .. " files)")
-  return true
+  return start(repo, base_ref, head_ref, scope_name)
 end
 
-function M.set_scope(spec)
-  if type(spec) == "string" then spec = { name = spec } end
-  local s = scope_mod.set(spec or {})
-  state.update(nil, { scope = s })
-  events.emit("ScopeChanged", { scope = s })
-  return s
+function M.set_scope(name)
+  local repo = (state.get() or {}).repo or root()
+  local base_ref, head_ref, err = scope_refs(repo, name)
+  if err then
+    vim.notify("reviewr: " .. err, vim.log.levels.WARN)
+    return nil, err
+  end
+  if not start(repo, base_ref, head_ref, name) then return nil end
+  events.emit("ScopeChanged", { scope = scope_mod.get() })
+  return scope_mod.get()
+end
+
+function M.refresh()
+  if not state.get() or not state.get().files then return false end
+  return load(require("reviewr.ui").panes().file)
 end
 
 function M.add_comment(input)
   input = input or {}
   local scope = scope_mod.get() or {}
   local repo = scope.repo or root()
-  local file = input.file
+  local file = input.file or vim.b.reviewr_file
   if not file then
     local name = vim.api.nvim_buf_get_name(0)
-    file = name ~= "" and name or nil
+    if vim.startswith(name, repo .. "/") then file = name:sub(#repo + 2) end
   end
-  if file and vim.startswith(file, repo .. "/") then file = file:sub(#repo + 2) end
   if not file then vim.notify("reviewr: no target file for comment", vim.log.levels.WARN); return nil, "no-file" end
-  local side = input.side or "right"
   local startl = input.start or vim.fn.line(".")
-  local endl = input["end"] or startl
-  local hunk = input.hunk_lines
-  local rec = {
+  local comment = store.add({
     repo = repo,
     scope = scope.name,
     file = file,
-    side = side,
+    side = input.side or vim.b.reviewr_side or "right",
     start = startl,
-    ["end"] = endl,
-    body = input.body or input[1] or "",
-    orphaned = false,
-  }
-  rec.hunk_hash = anchor.hash_lines(hunk or {})
-  local comment = store.add(rec)
-  -- optional highlight placement if buffer provided
-  if input.bufnr then
-    local id = anchor.place(input.bufnr, rec, anchor.namespace())
-    comment.extmark_id = id
-  end
-  if config_mod.get().baseline_trigger == "first_comment" then
-    -- mark turn lazily if no baseline yet
-    local sha, _ = turn.last_turn_sha(repo, scope)
-    if not sha then turn.mark_turn({ repo = repo, scope = scope }) end
+    ["end"] = input["end"] or startl,
+    body = input.body or "",
+  })
+  if config_mod.get().baseline_trigger == "first_comment" and not turn.last_turn_sha(repo, { name = "turn" }) then
+    turn.mark_turn({ repo = repo, scope = { name = "turn" } })
   end
   events.emit("CommentAdded", { comment = comment })
   return comment
@@ -155,7 +226,9 @@ function M.list_comments(query)
 end
 
 function M.mark_turn(opts)
-  return turn.mark_turn(opts or {})
+  opts = opts or {}
+  opts.scope = opts.scope or { name = "turn" }
+  return turn.mark_turn(opts)
 end
 
 local function valid_comment(c)
@@ -163,7 +236,6 @@ local function valid_comment(c)
   if not c.side then return false, "missing side" end
   if type(c.start) ~= "number" or type(c["end"]) ~= "number" then return false, "missing range" end
   if c.start > c["end"] then return false, "invalid range" end
-  if c.orphaned then return false, "orphaned" end
   if (c.body or "") == "" then return false, "empty body" end
   return true
 end
@@ -187,7 +259,7 @@ end
 
 function M.jump_comment(dir)
   local here = vim.fn.line(".")
-  local ordered = store.ordered()
+  local ordered = store.ordered({ file = vim.b.reviewr_file, side = vim.b.reviewr_side })
   local target
   if dir > 0 then
     for _, c in ipairs(ordered) do
@@ -205,23 +277,46 @@ function M.jump_comment(dir)
 end
 
 function M.jump_file(dir)
-  local scope = scope_mod.get() or {}
-  local repo = scope.repo or root()
-  local r = git.run_sync({ "diff", "--name-only", scope.ref or "HEAD" }, { cwd = repo })
-  local files = vim.tbl_filter(function(s) return s ~= "" end, r.stdout or {})
-  if #files == 0 then return nil end
-  local cur = vim.api.nvim_buf_get_name(0)
+  local s = state.get()
+  if not s or not s.files or #s.files == 0 then return nil end
+  local cur = require("reviewr.ui").panes().file
   local idx = 1
-  for i, f in ipairs(files) do if cur:sub(-#f) == f then idx = i; break end end
-  local nxt = ((idx - 1 + dir) % #files) + 1
-  return files[nxt]
+  for i, f in ipairs(s.files) do if f.path == cur then idx = i; break end end
+  local nxt = s.files[((idx - 1 + dir) % #s.files) + 1].path
+  M.open_file(nxt)
+  return nxt
 end
 
+local function envelope(repo, comments)
+  local files = {}
+  for _, c in ipairs(comments) do
+    if not vim.tbl_contains(files, c.file) then table.insert(files, c.file) end
+  end
+  local lines = {
+    "@@REVIEW_BEGIN v1",
+    "id: " .. store.gen_id(),
+    "source: reviewr.nvim",
+    "repo: " .. repo,
+  }
+  if #files == 1 then table.insert(lines, "file: " .. files[1]) end
+  if #comments == 1 then table.insert(lines, "range: " .. comments[1].start .. "-" .. comments[1]["end"]) end
+  vim.list_extend(lines, { "created: " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), "format: markdown", "---" })
+  for _, c in ipairs(comments) do
+    table.insert(lines, string.format("### %s:%d-%d (%s)", c.file, c.start, c["end"], c.side))
+    table.insert(lines, c.body)
+    table.insert(lines, "")
+  end
+  table.insert(lines, "@@REVIEW_END")
+  return table.concat(lines, "\n")
+end
+
+-- Exports every comment, or none: returns ok, count (or the failure reason),
+-- and where the comments went.
 function M.export(target)
   local scope = scope_mod.get() or {}
   local repo = scope.repo or root()
-  local comments = store.list({ repo = repo, scope = scope.name })
-  -- all-or-none validation
+  local comments = store.ordered({ repo = repo })
+  if #comments == 0 then return false, "no comments to export" end
   for _, c in ipairs(comments) do
     local ok, reason = valid_comment(c)
     if not ok then
@@ -230,54 +325,30 @@ function M.export(target)
       return false, reason
     end
   end
-  -- build envelope(s) grouped? one file per export batch
-  local lines = {
-    "@@REVIEW_BEGIN v1",
-    "id: " .. store.gen_id(),
-    "source: reviewr",
-    "repo: " .. repo,
-    "file: " .. (comments[1] and comments[1].file or ""),
-    "range: " .. (comments[1] and (comments[1].start .. "-" .. comments[1]["end"]) or ""),
-    "created: " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
-    "format: markdown",
-    "---",
-  }
-  for _, c in ipairs(comments) do
-    table.insert(lines, string.format("### %s:%d-%d (%s)", c.file, c.start, c["end"], c.side))
-    table.insert(lines, c.body)
-    table.insert(lines, "")
-  end
-  table.insert(lines, "@@REVIEW_END")
-  local envelope = table.concat(lines, "\n")
-
+  local text = envelope(repo, comments)
   local transport = require("reviewr.transport")
-  if target == "clipboard" then
-    vim.fn.setreg("+", envelope)
-    events.emit("Exported", { target = "clipboard", count = #comments })
-    return true, #comments
-  end
+  local tname, label = "clipboard", "clipboard"
   if target == "send" or target == "agent" then
-    local mode = (config_mod.get().send_mode or "queue")
-    local ok, tname, label, res = transport.send(envelope, { repo = repo, mode = mode })
-    if ok then events.emit("Exported", { target = tname, label = label, count = #comments, res = res }) end
-    return ok, (res or #comments)
+    tname, label = transport.send(text, { repo = repo, mode = config_mod.get().send_mode })
+  elseif target == "inbox" or target == "filesystem-inbox" then
+    tname, label = transport.send(text, { repo = repo, inbox_only = true })
+  else
+    vim.fn.setreg("+", text)
   end
-  if target == "inbox" or target == "filesystem-inbox" then
-    local ok, tname, label, res = transport.send(envelope, { repo = repo, mode = "queue" })
-    _ = tname; _ = label
-    events.emit("Exported", { target = "filesystem-inbox", path = res, count = #comments })
-    return ok, res
-  end
-  -- default clipboard
-  vim.fn.setreg("+", envelope)
-  events.emit("Exported", { target = "clipboard", count = #comments })
-  return true, #comments
+  events.emit("Exported", { target = tname, label = label, count = #comments })
+  return true, #comments, label
 end
 
 function M.clear(query)
   store.clear(query or {})
   events.emit("Cleared", { query = query })
+  require("reviewr.ui").redraw()
   return true
+end
+
+function M.close()
+  store.clear()
+  require("reviewr.ui").close_diff()
 end
 
 return M

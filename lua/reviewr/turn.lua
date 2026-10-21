@@ -18,8 +18,12 @@ function M.ref_name(repo, scope)
   return string.format("%s/%s/%s", config.get().private_ref_prefix, slug(repo), slug(scope_name))
 end
 
+-- A commit of the working tree as it is now (tracked files), without touching
+-- the worktree, index or stash list; HEAD when nothing is modified.
 function M.current_sha(repo)
   repo = repo or (scope_mod.repo() or vim.fn.getcwd())
+  local snap = git.run_sync({ "stash", "create" }, { cwd = repo })
+  if snap.ok and snap.stdout[1] and snap.stdout[1] ~= "" then return snap.stdout[1] end
   local r = git.run_sync({ "rev-parse", "HEAD" }, { cwd = repo })
   if r.code ~= 0 then return nil end
   return r.stdout[1]
@@ -50,11 +54,6 @@ function M.mark_turn(opts)
   local events = require("reviewr.events")
   events.emit("TurnMarked", { repo = repo, ref = ref, sha = sha })
   return ref, sha
-end
-
-function M.should_trigger(trigger, cfg_trigger)
-  cfg_trigger = cfg_trigger or config.get().baseline_trigger
-  return trigger == cfg_trigger or trigger == "manual"
 end
 
 return M

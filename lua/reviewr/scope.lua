@@ -21,10 +21,6 @@ function M.get()
   return current
 end
 
-function M.current()
-  return current
-end
-
 function M.clear()
   current = nil
 end
@@ -32,16 +28,6 @@ end
 function M.repo()
   if current then return current.repo end
   return nil
-end
-
-function M.ref()
-  if current then return current.ref or current.base end
-  return nil
-end
-
-function M.is_valid(scope)
-  scope = normalize(scope)
-  return scope and (scope.repo ~= nil or scope.name ~= nil)
 end
 
 return M

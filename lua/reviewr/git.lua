@@ -43,41 +43,6 @@ function M.run_sync(args, opts)
   return new_result(vim.v.shell_error, res or {}, {}, cwd)
 end
 
-function M.run_async(args, opts, cb)
-  opts = opts or {}
-  cb = cb or function() end
-  local a, cwd = prepare(args, opts)
-  local Job = plenary_job()
-  if Job then
-    local stdout, stderr = {}, {}
-    Job:new({
-      command = "git",
-      args = a,
-      on_stdout = function(_, d) table.insert(stdout, d) end,
-      on_stderr = function(_, d) table.insert(stderr, d) end,
-      on_exit = function(_, code)
-        vim.schedule(function() cb(new_result(code, stdout, stderr, cwd)) end)
-      end,
-    }):start()
-    return
-  end
-
-  local stdout, stderr = {}, {}
-  vim.fn.jobstart({ "git", unpack(a) }, {
-    stdout_buffered = true,
-    stderr_buffered = true,
-    on_stdout = function(_, d)
-      for _, x in ipairs(d or {}) do if x ~= "" then table.insert(stdout, x) end end
-    end,
-    on_stderr = function(_, d)
-      for _, x in ipairs(d or {}) do if x ~= "" then table.insert(stderr, x) end end
-    end,
-    on_exit = function(_, code)
-      vim.schedule(function() cb(new_result(code, stdout, stderr, cwd)) end)
-    end,
-  })
-end
-
 function M.git_root(cwd)
   local r = M.run_sync({ "rev-parse", "--show-toplevel" }, { cwd = cwd })
   if not r.ok or not r.stdout[1] then return nil end
