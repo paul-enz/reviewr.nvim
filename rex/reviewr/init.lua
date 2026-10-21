@@ -53,8 +53,10 @@ local function blocks_of(session_id)
   return ok and res.blocks or {}
 end
 
+-- The Neovim runs only for the review, so closing the review quits it and
+-- the pane closes with it.
 local function open_new(session_id, anchor, cwd, label, pre)
-  local command = { M.config.nvim }
+  local command = { M.config.nvim, "-c", "lua vim.g.reviewr_standalone = true" }
   if pre then
     command[#command + 1] = "-c"
     command[#command + 1] = pre

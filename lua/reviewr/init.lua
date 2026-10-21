@@ -456,6 +456,8 @@ end
 function M.close()
   store.clear()
   require("reviewr.rex").unwatch_all()
+  -- a Neovim started only for this review (cmd+r in Rex) has nothing left to show
+  if vim.g.reviewr_standalone then return vim.cmd("qall!") end
   require("reviewr.ui").close_diff()
 end
 

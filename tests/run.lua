@@ -324,6 +324,22 @@ test("the diff panes share the width evenly after Neovim is resized", function()
   assert(math.abs(l - r) <= 1, l .. " vs " .. r)
 end)
 
+test("closing a review that Rex launched quits its Neovim", function()
+  local script = vim.fn.tempname() .. ".lua"
+  vim.fn.writefile({
+    "vim.opt.rtp:prepend(" .. vim.inspect(plugin) .. ")",
+    "vim.g.reviewr_standalone = true",
+    "require('reviewr').setup({})",
+    "vim.cmd('cd ' .. " .. vim.inspect(repo) .. ")",
+    "assert(require('reviewr').set_scope('branch'))",
+    "require('reviewr').close()",
+    "io.stdout:write('still running')",
+    "vim.cmd('qall!')",
+  }, script)
+  local res = vim.system({ "nvim", "--headless", "-u", "NONE", "-c", "luafile " .. script }, { text = true }):wait(20000)
+  eq({ res.code, res.stdout }, { 0, "" })
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })
