@@ -79,14 +79,15 @@ them.
 - Keep `README.md`, `doc/reviewr.txt`, `INSTALL.md` (written for agents) and
   `skills/reviewr-nvim/SKILL.md` in step with behaviour. Refresh the README
   screenshots when the UI they show changes.
-- Land every change as: branch, PR, rebase-merge yourself, delete the branch,
+- Land every change as: branch, PR, rebase-merge yourself (`gh pr merge
+  --rebase --admin`: a ruleset locks `main` to the owner), delete the branch,
   then `nvim --headless "+Lazy! update reviewr.nvim" +qa` (bumps
   `~/.config/nvim/lazy-lock.json`) and `rex config reload` if `rex/` changed.
   Open reviews keep old code until reopened.
 - Commits use the configured git identity, end-state messages, no
   Claude attribution. User-facing copy (descriptions, prompts) has no em dashes.
 
-## Screenshots
+## Screenshots and the demo GIF
 
 Captured from a live review, not mocked: a demo repo with a feature branch,
 Neovim started with `-u` a minimal init (this plugin, gruvbox, `laststatus=0`,
@@ -95,3 +96,12 @@ highlights), in a hidden Rex tab resized to 150×36. Export each state with
 `rex block call <block> format '{"format":"html"}'`, wrap `.content` in a page
 (Menlo 13px/17px, body background = Normal bg) and render with headless Chrome
 at `--force-device-scale-factor=2`.
+
+`assets/demo.gif` is recorded the same way, from Claude Code in a throwaway
+copy of the demo repo: a recorder saves both blocks' HTML about three times a
+second while a script triggers the Rex key handler for Claude's block
+(`rex do` running the module's `toggle`), comments with `c` and `:w`, sends
+with `s` and submits with Enter. Each frame lays Claude's pane (60 columns) and
+the review (100) side by side, headless Chrome renders it, and ffmpeg joins
+the frames at their recorded timings. Run the review Neovim with
+`focus_agent = false`, so sending doesn't bring the hidden tab forward.
