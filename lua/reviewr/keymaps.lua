@@ -43,21 +43,62 @@ local function bind(bufnr, lhs, rhs, opts)
   vim.keymap.set(opts.mode or "n", lhs, rhs, opts)
 end
 
-local function comment_here()
-  local reviewr = require("reviewr")
+local function open_comment_box()
   local ui = require("reviewr.ui")
   local startl, endl = vim.fn.line("."), vim.fn.line(".")
   if vim.fn.mode():find("[vV]") then
     startl, endl = vim.fn.line("v"), vim.fn.line(".")
     if startl > endl then startl, endl = endl, startl end
   end
-  vim.ui.input({ prompt = "comment: " }, function(body)
-    if not body or body == "" then return end
-    if reviewr.add_comment({ body = body, start = startl, ["end"] = endl }) then
-      ui.redraw()
+  local file = vim.api.nvim_buf_get_name(0)
+  if file == "" then file = require("reviewr.ui").panes().file or "" end
+  local origin = vim.api.nvim_get_current_win()
+  local alt = ui.alternate_win()
+  if not alt or not vim.api.nvim_win_is_valid(alt) then
+    vim.notify("reviewr: open a review first", vim.log.levels.WARN)
+    return
+  end
+  local saved = vim.api.nvim_win_get_buf(alt)
+  vim.bo[saved].bufhidden = "hide"
+
+  local buf = vim.api.nvim_create_buf(false, false)
+  local span = startl == endl and tostring(startl) or (startl .. "-" .. endl)
+  local header = { "# " .. vim.fn.fnamemodify(file, ":t") .. ":" .. span, "" }
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, header)
+  vim.bo[buf].filetype = "markdown"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.api.nvim_buf_set_name(buf, "reviewr://comment/" .. span)
+
+  vim.api.nvim_win_set_buf(alt, buf)
+  pcall(function() vim.wo[alt].winbar = "  comment  ·  :w save   <esc> cancel  " end)
+  vim.api.nvim_set_current_win(alt)
+  vim.fn.cursor(#header + 1, 1)
+  vim.cmd("startinsert")
+
+  local function finish(save)
+    vim.cmd("stopinsert")
+    local body = table.concat(vim.api.nvim_buf_get_lines(buf, #header, -1, false), "\n")
+    if vim.api.nvim_win_is_valid(alt) then
+      vim.api.nvim_win_set_buf(alt, saved)
+      pcall(function() vim.wo[alt].winbar = "  base  " end)
     end
-  end)
+    if vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
+    if save and body:gsub("%s", "") ~= "" then
+      require("reviewr").add_comment({ file = file, body = body, start = startl, ["end"] = endl })
+      ui.redraw(vim.api.nvim_win_get_buf(origin))
+    end
+  end
+  vim.keymap.set("n", "<esc>", function() finish(false) end, { buffer = buf, silent = true, nowait = true })
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = buf,
+    callback = function()
+      vim.bo[buf].modified = false
+      finish(true)
+    end,
+  })
 end
+
+M.open_comment_box = open_comment_box
 
 local function edit_here()
   local ui = require("reviewr.ui")
@@ -102,7 +143,7 @@ function M.apply(bufnr, overrides)
   local keys = vim.tbl_extend("force", M.defaults, overrides or {})
   local ui = require("reviewr.ui")
   local bindings = {
-    { keys.comment, comment_here, { "n", "v" } },
+    { keys.comment, open_comment_box, { "n", "v" } },
     { keys.edit,    edit_here },
     { keys.delete,  delete_here },
     { keys.send,    function() export("send") end },

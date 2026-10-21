@@ -30,7 +30,7 @@ KEYMAPS                                                 *reviewr-keymaps*
 
 The footer always shows the next step. `?` lists every key.
 
-  c     comment on the current line, or the visual selection
+  c     comment: opens a buffer in the other pane; :w saves, <esc> cancels
   e     edit the comment under the cursor
   d     delete the comment under the cursor
   n N   next / previous comment

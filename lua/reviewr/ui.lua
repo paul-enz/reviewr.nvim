@@ -65,8 +65,30 @@ function M.open_diff(left_buf, right_buf, opts)
     vim.wo[left_win].winbar = "  base  "
     vim.wo[right_win].winbar = "  feature  "
   end)
-  state.diff = { left_win = left_win, right_win = right_win, left_buf = left_buf, right_buf = right_buf }
+  state.diff = { left_win = left_win, right_win = right_win, left_buf = left_buf, right_buf = right_buf, file = opts.file }
   return state.diff
+end
+
+function M.remember(diff)
+  state.diff = diff or {}
+end
+
+function M.panes()
+  return state.diff
+end
+
+-- The diff window that is not the current one: where the comment box opens,
+-- the way octo.nvim opens its thread buffer in the alternate pane.
+function M.alternate_win()
+  local d = state.diff
+  local cur = vim.api.nvim_get_current_win()
+  if cur == d.right_win and d.left_win and vim.api.nvim_win_is_valid(d.left_win) then
+    return d.left_win
+  end
+  if d.right_win and vim.api.nvim_win_is_valid(d.right_win) and cur ~= d.right_win then
+    return d.right_win
+  end
+  return d.left_win
 end
 
 function M.close_diff()

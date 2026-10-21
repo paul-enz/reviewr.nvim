@@ -6,7 +6,7 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 
 ![Every key, behind `?`.](assets/keys.png)
 
-![Adding a comment: `c` on a line opens the prompt, and the comment lands above that line.](assets/comment.png)
+![Adding a comment. `c` on a line, or a visual selection, opens a buffer in the other pane. `:w` saves it, `<esc>` cancels.](assets/comment.png)
 
 ## Features
 
