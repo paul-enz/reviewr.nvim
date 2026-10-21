@@ -1,20 +1,75 @@
 name: test
 
+# The specs run on self-hosted runners, so only the repository owner's code
+# runs unasked: pushes to main and the owner's own pull requests. Anyone
+# else's pull request runs when the owner comments /ok-to-test on it, which
+# tests the commit the pull request pointed at when the comment was made.
+# Comment-triggered runs use this file as it is on main, so a pull request
+# can't change the gate.
+
 on:
   push:
     branches: [main]
   pull_request:
-
-concurrency:
-  group: test-${{ github.ref }}
-  cancel-in-progress: true
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
 
 jobs:
+  target:
+    if: >-
+      github.event_name == 'push'
+      || (github.event_name == 'pull_request'
+        && github.event.pull_request.user.login == github.repository_owner)
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && github.event.comment.author_association == 'OWNER'
+        && github.event.comment.body == '/ok-to-test')
+    runs-on: [self-hosted, Linux, X64, proxmox, sabana]
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - id: sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.issue.number }}
+          COMMENT: ${{ github.event.comment.id }}
+        run: |
+          set -euo pipefail
+          api() { curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$@"; }
+          case "$EVENT" in
+            push) sha=$PUSH_SHA ;;
+            pull_request) sha=$PR_SHA ;;
+            issue_comment)
+              # the runners have no jq; head's label, ref and sha come before
+              # any nested object
+              sha=$(api "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR" | tr -d '\n ' \
+                | grep -o '"head":{[^{}]*"sha":"[0-9a-f]\{40\}"' | grep -o '[0-9a-f]\{40\}' | head -1)
+              test -n "$sha"
+              api -X POST "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT/reactions" -d '{"content":"rocket"}' >/dev/null
+              api -X POST "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/statuses/$sha" \
+                -d "{\"state\":\"pending\",\"context\":\"test (ok-to-test)\",\"target_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}" >/dev/null
+              ;;
+          esac
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Testing $sha" >> "$GITHUB_STEP_SUMMARY"
+
   test:
+    needs: target
     name: test (${{ matrix.os }}, ${{ matrix.neovim }})
+    concurrency:
+      group: test-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}-${{ matrix.os }}-${{ matrix.neovim }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +84,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          persist-credentials: false
       - if: runner.os == 'Linux'
         uses: ./.github/actions/setup-git
       - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
@@ -36,3 +94,25 @@ jobs:
           neovim: true
           version: ${{ matrix.neovim }}
       - run: nvim --headless -u NONE -l tests/run.lua
+
+  # A comment-triggered run isn't attached to the pull request's commit, so
+  # its result goes there as a commit status.
+  report:
+    needs: [target, test]
+    if: ${{ always() && github.event_name == 'issue_comment' && needs.target.result == 'success' }}
+    runs-on: [self-hosted, Linux, X64, proxmox, sabana]
+    timeout-minutes: 2
+    permissions:
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.target.outputs.sha }}
+          RESULT: ${{ needs.test.result }}
+        run: |
+          set -euo pipefail
+          state=failure
+          if [ "$RESULT" = success ]; then state=success; fi
+          curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -d "{\"state\":\"$state\",\"context\":\"test (ok-to-test)\",\"target_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}" >/dev/null
