@@ -49,9 +49,9 @@ from. If the agent has no skills, add the file's contents to its instructions.
 ## 3. Rex integration (only if the user runs Rex)
 
 Rex is in use when `rex` is on the PATH and `~/.config/rex/init.lua` exists.
-The integration binds cmd+r to open a review of everything on the focused
-terminal's branch, committed or not, against the default branch, in a split to
-its right.
+The integration binds cmd+r to show or hide a review of everything on the
+focused terminal's branch, committed or not, against the default branch, in a
+split to its right. Hidden reviews keep running with their comments.
 
 ```sh
 ln -s "$plugin/rex/reviewr" ~/.config/rex/reviewr

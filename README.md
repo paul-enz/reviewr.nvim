@@ -43,7 +43,7 @@ By hand, with lazy.nvim:
 
 ## Rex
 
-`rex/reviewr` is a Rex config module. Linked into `~/.config/rex/reviewr` and enabled in `~/.config/rex/init.lua` (see [INSTALL.md](INSTALL.md); guard the `require` with `pcall`), it binds cmd+r: a review of the focused terminal's current branch, against the default branch, opens in a split to its right. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
+`rex/reviewr` is a Rex config module. Linked into `~/.config/rex/reviewr` and enabled in `~/.config/rex/init.lua` (see [INSTALL.md](INSTALL.md); guard the `require` with `pcall`), it binds cmd+r to show or hide a review beside the focused terminal. The first press opens a review of the terminal's branch, committed or not, against the default branch, in a split to its right; the next press hides it, still running with its comments, and the press after brings it back. Each repository keeps one review. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
 
 Inside Rex the plugin also:
 
