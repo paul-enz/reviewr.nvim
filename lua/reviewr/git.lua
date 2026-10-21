@@ -52,7 +52,14 @@ function M.snapshot(cwd)
   if not index then return nil end
   if not index:match("^/") then index = cwd .. "/" .. index end
   local tmp = vim.fn.tempname()
-  if vim.fn.filereadable(index) == 1 then vim.uv.fs_copyfile(index, tmp) end
+  if vim.fn.filereadable(index) == 1 then
+    vim.uv.fs_copyfile(index, tmp)
+    -- git trusts an entry's timestamps only if the index is newer than the
+    -- file; the copy keeps the index's own times, so a file edited in the
+    -- same second as the last commit, at the same size, is still read
+    local st = vim.uv.fs_stat(index)
+    vim.uv.fs_utime(tmp, st.atime.sec + st.atime.nsec / 1e9, st.mtime.sec + st.mtime.nsec / 1e9)
+  end
   local env = { GIT_INDEX_FILE = tmp }
   local add = vim.system({ "git", "-C", cwd, "add", "-u" }, { env = env }):wait()
   local tree = add.code == 0 and vim.system({ "git", "-C", cwd, "write-tree" }, { env = env, text = true }):wait()

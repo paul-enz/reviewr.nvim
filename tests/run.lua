@@ -765,6 +765,25 @@ test("with nothing to review the tab still opens, says so, and fills in on refre
   git("checkout -q -- .")
 end)
 
+test("an edit in the same second as the commit, at the same size, still shows", function()
+  local other = vim.fn.resolve(vim.fn.tempname())
+  vim.fn.mkdir(other, "p")
+  local function g(args) return sh("git -C " .. vim.fn.shellescape(other) .. " " .. args) end
+  g("init -q -b main")
+  g("config user.email t@t && git -C " .. other .. " config user.name t")
+  -- commit and edit within one second, so the index and the file share it
+  repeat
+    local second = os.time()
+    write(other .. "/a.txt", { "one" })
+    g("add . && git -C " .. other .. " commit -qm init")
+    write(other .. "/a.txt", { "ONE" })
+  until os.time() == second
+  vim.wait(1100)
+  local tree = require("reviewr.git").snapshot(other)
+  eq(vim.trim(g("diff --name-only HEAD " .. tree)), "a.txt")
+  vim.fn.delete(other, "rf")
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })
