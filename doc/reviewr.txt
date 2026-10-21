@@ -24,7 +24,8 @@ COMMANDS                                                *reviewr-commands*
         tree cover tracked files only: new files appear once `git add`ed.
   :ReviewrScope {scope}
         uncommitted, staged, branch (the working tree, commits and all,
-        against its merge base with the default branch) or turn (the
+        against its merge base with the default branch or the one picked
+        with gb), commit {sha} (that commit alone) or turn (the
         working tree against the last turn baseline).
   :[range]ReviewrComment {text}
         Comment on the current line or range.
@@ -51,6 +52,9 @@ In the diff panes:
   ]c [c next / previous change
   f F   next / previous changed file
   r     reread the changes from git and the working tree
+  u b t view: uncommitted / branch / last turn
+  gc    pick a commit and review just that commit
+  gb    pick the base branch for the branch view
   ?     all keys
   q     close. With unsent comments it asks once: <CR> closes, <Right> then
         <CR> or <Esc> keeps reviewing. A review that cmd+r

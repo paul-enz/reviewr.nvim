@@ -28,6 +28,7 @@ nvim --headless -c 'lua io.stdout:write(tostring(pcall(require, "reviewr")) .. "
 | the working tree against `main` | `ReviewrOpen main` |
 | `feature` against `main` | `ReviewrOpen main feature` |
 | uncommitted changes | `ReviewrOpen` |
+| one commit | `ReviewrScope commit <sha>` |
 | what is staged | `ReviewrScope staged` |
 | what you (or another agent) changed in your last turn | `ReviewrScope turn` |
 

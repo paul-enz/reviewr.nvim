@@ -10,7 +10,10 @@ local turn = require("reviewr.turn")
 local M = {}
 local setup_done = false
 
-local SCOPES = { "uncommitted", "staged", "branch", "turn" }
+local SCOPES = { "uncommitted", "staged", "branch", "turn", "commit" }
+local EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+-- the base branch picked with gb; nil means the default branch
+local chosen_base
 
 -- open: mark the turn baseline whenever a review opens; agent: when a
 -- watched agent starts working; auto: agent inside Rex, else open
@@ -76,8 +79,10 @@ function M.setup(opts)
   log.info("setup")
   require("reviewr.ui").setup()
   vim.api.nvim_create_user_command("ReviewrOpen", function(o) M.open(o.fargs) end, { nargs = "*" })
-  vim.api.nvim_create_user_command("ReviewrScope", function(o) M.set_scope(o.args) end, {
-    nargs = 1,
+  vim.api.nvim_create_user_command("ReviewrScope", function(o)
+    M.set_scope(o.fargs[1], { commit = o.fargs[2] })
+  end, {
+    nargs = "+",
     complete = function() return SCOPES end,
   })
   vim.api.nvim_create_user_command("ReviewrComment", function(o)
@@ -156,21 +161,28 @@ local function default_branch(repo)
   return nil
 end
 
--- The (base, head) pair a scope compares.
-local function scope_refs(repo, name)
+-- The (base, head) pair a scope compares, and how the bar names it.
+local function scope_refs(repo, name, opts)
+  opts = opts or {}
   if name == "uncommitted" then return "HEAD", nil end
   if name == "staged" then return "HEAD", ":" end
   if name == "turn" then
     local sha = turn.last_turn_sha(repo, turn_scope())
     if not sha then return nil, nil, "no turn marked yet; run :ReviewrTurn" end
-    return sha, nil
+    return sha, nil, nil, "last turn"
   end
   if name == "branch" then
-    local base = default_branch(repo)
+    local base = chosen_base or default_branch(repo)
     if not base then return nil, nil, "no default branch found" end
     local mb = git.run_sync({ "merge-base", base, "HEAD" }, { cwd = repo })
     if not (mb.ok and mb.stdout[1]) then return nil, nil, "no merge base with " .. base end
-    return mb.stdout[1], nil
+    return mb.stdout[1], nil, nil, "branch vs " .. base
+  end
+  if name == "commit" then
+    local sha = opts.commit and git.rev_parse(opts.commit .. "^{commit}", repo)
+    if not sha then return nil, nil, "no such commit: " .. tostring(opts.commit) end
+    local parent = git.rev_parse(sha .. "^", repo) or EMPTY_TREE
+    return parent, sha, nil, "commit " .. sha:sub(1, 7)
   end
   return nil, nil, "unknown scope " .. tostring(name)
 end
@@ -207,7 +219,7 @@ local function load(prefer)
   return M.open_file(target)
 end
 
-local function start(repo, base_ref, head_ref, scope_name)
+local function start(repo, base_ref, head_ref, scope_name, label)
   -- the left pane shows the merge base, so a moving base branch adds no noise
   if head_ref and head_ref ~= ":" then
     local mb = git.run_sync({ "merge-base", base_ref, head_ref }, { cwd = repo })
@@ -221,7 +233,7 @@ local function start(repo, base_ref, head_ref, scope_name)
   local cur = vim.api.nvim_buf_get_name(0)
   local prefer = vim.startswith(cur, repo .. "/") and cur:sub(#repo + 2) or ui.panes().file
   if ui.is_open() then ui.focus_tab() else ui.open_tab() end
-  scope_mod.set({ repo = repo, name = scope_name, ref = head_ref or "WORKTREE" })
+  scope_mod.set({ repo = repo, name = scope_name, label = label, ref = head_ref or "WORKTREE" })
   local s = state.ensure()
   s.repo, s.base_ref, s.head_ref, s.scope = repo, base_ref, head_ref, scope_mod.get()
   if not load(prefer) then return false end
@@ -262,16 +274,46 @@ function M.open(args)
   return start(repo, base_ref, head_ref, scope_name)
 end
 
-function M.set_scope(name)
+-- opts.commit: the commit the commit scope shows.
+function M.set_scope(name, opts)
   local repo = (state.get() or {}).repo or root()
-  local base_ref, head_ref, err = scope_refs(repo, name)
+  local base_ref, head_ref, err, label = scope_refs(repo, name, opts)
   if err then
     vim.notify("reviewr: " .. err, vim.log.levels.WARN)
     return nil, err
   end
-  if not start(repo, base_ref, head_ref, name) then return nil end
+  if not start(repo, base_ref, head_ref, name, label) then return nil end
   events.emit("ScopeChanged", { scope = scope_mod.get() })
   return scope_mod.get()
+end
+
+-- Picks one of the last 100 commits on HEAD and reviews just that commit.
+function M.pick_commit()
+  local repo = (state.get() or {}).repo or root()
+  local log = git.run_sync({ "log", "-n", "100", "--format=%h%x09%s" }, { cwd = repo }).stdout or {}
+  local items = vim.tbl_filter(function(l) return l ~= "" end, log)
+  vim.ui.select(items, {
+    prompt = "Review commit",
+    format_item = function(l) return (l:gsub("\t", "  ")) end,
+  }, function(choice)
+    if choice then M.set_scope("commit", { commit = choice:match("^(%S+)") }) end
+  end)
+end
+
+-- Picks the branch the branch scope compares against, then shows it.
+function M.pick_base()
+  local repo = (state.get() or {}).repo or root()
+  local refs = git.run_sync({ "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes" },
+    { cwd = repo }).stdout or {}
+  local current = git.run_sync({ "branch", "--show-current" }, { cwd = repo }).stdout[1]
+  local items = vim.tbl_filter(function(r)
+    return r ~= "" and r ~= current and not r:match("/HEAD$") and r ~= "origin"
+  end, refs)
+  vim.ui.select(items, { prompt = "Compare the branch against" }, function(choice)
+    if not choice then return end
+    chosen_base = choice
+    M.set_scope("branch")
+  end)
 end
 
 function M.refresh()

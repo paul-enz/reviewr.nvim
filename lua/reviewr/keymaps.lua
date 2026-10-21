@@ -14,6 +14,11 @@ M.defaults = {
   nextf   = "f",   -- next changed file
   prevf   = "F",   -- previous changed file
   refresh = "r",   -- reload the diff
+  uncommitted = "u", -- review uncommitted changes
+  branch  = "b",   -- review the branch against its base
+  turn    = "t",   -- review the agent's last turn
+  commit  = "gc",  -- pick a commit and review it
+  base    = "gb",  -- pick the base branch for the branch view
   help    = "?",   -- show every key
   quit    = "q",   -- close the review
   next    = "]c",  -- next change
@@ -36,6 +41,11 @@ M.legend = {
   { "f",  "next file" },
   { "F",  "previous file" },
   { "r",  "refresh" },
+  { "u",  "view: uncommitted" },
+  { "b",  "view: branch" },
+  { "t",  "view: last turn" },
+  { "gc", "view: pick a commit" },
+  { "gb", "pick the base branch" },
   { "?",  "all keys" },
   { "q",  "close" },
 }
@@ -190,6 +200,11 @@ function M.apply(bufnr, overrides)
     { keys.nextf,   function() jump_file(1) end },
     { keys.prevf,   function() jump_file(-1) end },
     { keys.refresh, function() require("reviewr").refresh() end },
+    { keys.uncommitted, function() require("reviewr").set_scope("uncommitted") end },
+    { keys.branch,  function() require("reviewr").set_scope("branch") end },
+    { keys.turn,    function() require("reviewr").set_scope("turn") end },
+    { keys.commit,  function() require("reviewr").pick_commit() end },
+    { keys.base,    function() require("reviewr").pick_base() end },
     { keys.help,    function() ui.toggle_help(M.legend) end },
     { keys.quit,    M.quit },
     { keys.next,    function() vim.cmd("normal! ]c") end },

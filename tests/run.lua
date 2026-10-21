@@ -355,6 +355,37 @@ test("q asks once: Enter closes, Right then Enter or Esc keeps the review", func
   assert(not ui.is_open() and store.count() == 0, "Enter closes it")
 end)
 
+test("u, b and t switch views; gc reviews one picked commit; gb picks the base branch", function()
+  assert(reviewr.set_scope("branch"))
+  local d = ui.panes()
+  for _, key in ipairs({ "u", "b", "t", "gc", "gb" }) do
+    assert(vim.fn.maparg(key, "n", false, true).buffer == 1, key .. " not bound in the diff")
+  end
+  local select = vim.ui.select
+  local feat = vim.trim(git("log -1 --format=%h feature"))
+  vim.ui.select = function(items, _, cb)
+    for _, it in ipairs(items) do if vim.startswith(it, feat) then return cb(it) end end
+  end
+  reviewr.pick_commit()
+  eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files), { "added.md", "f.txt", "g.lua", "gone.txt" })
+  eq(require("reviewr.scope").get().label, "commit " .. feat)
+  reviewr.open_file("f.txt")
+  eq(lines(ui.panes().left_buf), { "a", "b", "c", "d" }, "left is the commit's parent")
+  git("branch -f mid feature")
+  git("checkout -q -- .")
+  write(repo .. "/g.lua", { "after mid" })
+  vim.ui.select = function(items, _, cb)
+    assert(not vim.tbl_contains(items, "feature"), "the current branch is not offered")
+    cb("mid")
+  end
+  reviewr.pick_base()
+  eq(require("reviewr.scope").get().label, "branch vs mid")
+  eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files), { "g.lua" })
+  vim.ui.select = select
+  git("checkout -q -- g.lua")
+  git("branch -D mid")
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })

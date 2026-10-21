@@ -95,7 +95,7 @@ nvim -c 'cd /path/repo' -c 'ReviewrOpen HEAD feature'
 | Command | Description |
 |---|---|
 | `:ReviewrOpen [base] [head] [label]` | open a review; no args reviews uncommitted changes, `{base}` alone reviews the working tree against its merge base with base, `{base} {head}` diffs the commits of head against its merge base with base |
-| `:ReviewrScope {scope}` | switch scope: `uncommitted`, `staged`, `branch` (the working tree against its merge base with the default branch), `turn` |
+| `:ReviewrScope {scope}` | switch scope: `uncommitted`, `staged`, `branch` (the working tree against its merge base with the default branch, or the base picked with `gb`), `turn`, `commit {sha}` |
 | `:[range]ReviewrComment {text}` | comment on the current line or range |
 | `:ReviewrTurn` | snapshot the working tree as the turn baseline |
 | `:ReviewrExport {clipboard\|send\|inbox}` | export all comments (all-or-none) |
@@ -118,6 +118,9 @@ The bar above the change pane always shows the next step. `?` lists every key.
 | `]c` / `[c` | next / previous change |
 | `f` / `F` | next / previous changed file |
 | `r` | reread the changes from git and the working tree |
+| `u` `b` `t` | view: uncommitted / branch / last turn |
+| `gc` | pick a commit and review just that commit |
+| `gb` | pick the base branch for the branch view |
 | `?` | all keys |
 | `q` | close. With unsent comments it asks once: Enter closes, Right then Enter or Esc keeps reviewing. A review cmd+r opened closes its pane too |
 
