@@ -111,8 +111,8 @@ local function buf_from_ref(repo, ref, path, side)
   return buf
 end
 
--- Against the working tree, the diff is against a snapshot of it, so files
--- not yet added to git count as changes too.
+-- Against the working tree, the diff is against a snapshot of its tracked
+-- files, so staged new files count and untracked ones don't.
 local function changed_files(repo, base_ref, head_ref)
   local args
   if head_ref == ":" then

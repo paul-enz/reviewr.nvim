@@ -21,7 +21,7 @@ COMMANDS                                                *reviewr-commands*
         No arguments: uncommitted changes. With {base}: the working tree
         against its merge base with {base}. With {base} {head}: the commits
         of {head} against its merge base with {base}. Reviews of the working
-        tree include files not yet added to git.
+        tree cover tracked files only: new files appear once `git add`ed.
   :ReviewrScope {scope}
         uncommitted, staged, branch (the working tree, commits and all,
         against its merge base with the default branch) or turn (the

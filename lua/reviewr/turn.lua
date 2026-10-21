@@ -18,8 +18,8 @@ function M.ref_name(repo, scope)
   return string.format("%s/%s/%s", config.get().private_ref_prefix, slug(repo), slug(scope_name))
 end
 
--- A commit of the working tree as it is now, untracked files included,
--- without touching the worktree, index or refs.
+-- A commit of the tracked files as they are now in the working tree, without
+-- touching the worktree, index or refs.
 function M.current_sha(repo)
   repo = repo or (scope_mod.repo() or vim.fn.getcwd())
   local tree = git.snapshot(repo)

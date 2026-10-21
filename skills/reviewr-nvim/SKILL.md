@@ -38,7 +38,7 @@ review shows exactly your changes; suggest it rather than a branch diff.
 
 `ReviewrOpen {base} {head}` diffs `head` against its merge base with `base`, the
 way a pull request does, so commits that landed on `base` later don't show.
-Working-tree reviews (no head ref: `branch`, `uncommitted`, `turn`, `ReviewrOpen main`) include uncommitted edits and new untracked files; a review with two refs compares commits only.
+Working-tree reviews (no head ref: `branch`, `uncommitted`, `turn`, `ReviewrOpen main`) include uncommitted edits to tracked files and new files once they are `git add`ed (untracked files never appear); a review with two refs compares commits only.
 Resolve the user's words to real refs first (`git branch -a`,
 `git rev-parse --verify <ref>`), and ask when a name matches nothing or several
 things. "No changes found" with an empty Neovim means the pair has no diff;
