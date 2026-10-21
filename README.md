@@ -6,6 +6,8 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 
 ![Adding a comment. `c` on a line or selection opens a small box over the other pane and marks the commented lines in the gutter. `:w` saves, `<esc>` cancels.](assets/comment.png)
 
+![Sending with several agents running. `S` (or `s` when more than one agent is found) asks which one gets the review, the likeliest first: `j`/`k` or the arrows move, Enter sends, Esc cancels.](assets/send.png)
+
 ![Every key, behind `?`.](assets/keys.png)
 
 ![Closing with unsent comments asks once. Enter closes; Right then Enter, or Esc, keeps reviewing.](assets/close.png)
@@ -45,6 +47,8 @@ By hand, with lazy.nvim:
 ## Rex
 
 `rex/reviewr/init.lua` is a Rex config module. Loaded from `~/.config/rex/init.lua` (see below), it binds cmd+r to show or hide a review beside the focused terminal. The first press opens a review of the terminal's branch, committed or not, against the default branch, in a split to its right; the next press hides it, still running with its comments, and the press after brings it back.
+
+With nothing to review, the review still opens and says so (`changed files (0)`); it fills in on `r`, a view key, or when a watched agent finishes a turn.
 
 Pressed in an agent's terminal, cmd+r opens a review **paired with that agent**: `s` sends to it without asking (`S` still offers the picker), the review follows only that agent's turns, and its turn baseline is its own. Run several agents, each with its own review beside it; with one git worktree per agent, each review's turn view shows exactly its agent's last turn. Agents sharing one working copy see each other's edits in their turn views, since git can't tell who wrote what. Pressed in any other terminal, cmd+r keeps one unpaired review per repository. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
 

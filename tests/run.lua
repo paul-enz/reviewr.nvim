@@ -742,7 +742,27 @@ test("the diff panes mark the cursor line by its number only, so no underline cr
   assert(reviewr.open({ "master", "feature" }))
   local d = ui.panes()
   for _, w in ipairs({ d.left_win, d.right_win }) do eq(vim.wo[w].cursorlineopt, "number") end
+  eq(vim.wo[ui.files_panel().win].cursorlineopt, "line", "the panel highlights its whole row")
+  vim.api.nvim_set_current_win(d.right_win)
+  local picker = ui.pick({ "one", "two" }, { prompt = "Pick" }, function() end)
+  eq(vim.wo[picker].cursorlineopt, "line", "the picker highlights its whole row")
+  vim.api.nvim_win_close(picker, true)
   vim.o.cursorline = false
+end)
+
+test("with nothing to review the tab still opens, says so, and fills in on refresh", function()
+  require("reviewr").close()
+  git("checkout -q -- .")
+  eq(reviewr.set_scope("uncommitted"), nil, "nothing to review")
+  assert(ui.is_open(), "the review tab is open")
+  eq(vim.wo[ui.files_panel().win].winbar, "  changed files (0)  ")
+  eq(lines(ui.panes().right_buf), { "  No changes to review (uncommitted)." })
+  vim.api.nvim_set_current_win(ui.panes().right_win)
+  assert(vim.fn.maparg("q", "n", false, true).buffer == 1, "keys work in the empty review")
+  write(repo .. "/g.lua", { "a change" })
+  assert(reviewr.refresh(), "fills in")
+  eq(panel_lines()[1]:match("g%.lua") ~= nil, true)
+  git("checkout -q -- .")
 end)
 
 test("close drops comments and the review tab, even as the only tab", function()

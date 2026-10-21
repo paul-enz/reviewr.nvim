@@ -250,6 +250,26 @@ function M.open_file(path)
   return true
 end
 
+-- With nothing to review the tab still opens, saying so, and keeps its keys:
+-- r, a view key or the end of an agent's turn fills it once there are changes.
+local function show_empty()
+  local ui = require("reviewr.ui")
+  local scope = scope_mod.get() or {}
+  local bufs = {}
+  for i, text in ipairs({ "", "  No changes to review (" .. (scope.label or scope.name or "this view") .. ")." }) do
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
+    vim.bo[buf].buftype, vim.bo[buf].bufhidden, vim.bo[buf].modifiable = "nofile", "wipe", false
+    bufs[i] = buf
+  end
+  ui.show_file(bufs[1], bufs[2], nil)
+  local km = config_mod.get().keymaps
+  if km then
+    for _, buf in ipairs(bufs) do require("reviewr.keymaps").apply(buf, type(km) == "table" and km or nil) end
+  end
+  ui.open_files_panel({})
+end
+
 -- What a pane shows, as comments record it: a commit (or tree) id, the index
 -- or the working tree.
 local function content_at(repo, ref)
@@ -266,6 +286,7 @@ local function load(prefer, files, keep_view)
   s.files = files or changed_files(s.repo, s.base_ref, s.head_ref)
   s.left_at, s.right_at = content_at(s.repo, s.base_ref), content_at(s.repo, s.head_ref)
   if #s.files == 0 then
+    show_empty()
     vim.notify("reviewr: no changes found", vim.log.levels.INFO)
     return false
   end
@@ -296,11 +317,11 @@ local function start(repo, base_ref, head_ref, scope_name, label)
     local mb = git.run_sync({ "merge-base", base_ref, head_ref }, { cwd = repo })
     if mb.ok and mb.stdout[1] then base_ref = mb.stdout[1] end
   end
-  local files = changed_files(repo, base_ref, head_ref)
-  if #files == 0 then
-    vim.notify("reviewr: no changes found", vim.log.levels.INFO)
+  if not git.git_root(repo) then
+    vim.notify("reviewr: not in a git repository", vim.log.levels.WARN)
     return false
   end
+  local files = changed_files(repo, base_ref, head_ref)
   local ui = require("reviewr.ui")
   local cur = vim.api.nvim_buf_get_name(0)
   local prefer = vim.startswith(cur, repo .. "/") and cur:sub(#repo + 2) or ui.panes().file
@@ -308,7 +329,7 @@ local function start(repo, base_ref, head_ref, scope_name, label)
   scope_mod.set({ repo = repo, name = scope_name, label = label, ref = head_ref or "WORKTREE" })
   local s = state.ensure()
   s.repo, s.base_ref, s.head_ref, s.scope = repo, base_ref, head_ref, scope_mod.get()
-  if not load(prefer, files) then return false end
+  local shown = load(prefer, files)
   if not pruned[repo] then
     pruned[repo] = true
     local live
@@ -341,7 +362,7 @@ local function start(repo, base_ref, head_ref, scope_name, label)
   end
   events.emit("Opened", { repo = repo, scope = scope_mod.get(), file = ui.panes().file, files = s.files })
   log.info("opened " .. repo .. " (" .. #s.files .. " files)")
-  return true
+  return shown
 end
 
 function M.open(args)

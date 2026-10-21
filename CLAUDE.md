@@ -17,6 +17,8 @@ them.
   its merge base with the default branch (`origin/HEAD`, else main/master) or
   the base picked with `gb`. Two refs (`:ReviewrOpen a b`) compare commits only.
 - `commit` shows one commit against its parent (empty tree for a root commit).
+- With nothing to review the tab still opens, says so, and keeps its keys;
+  outside a git repository it doesn't open.
 - A comment records what its side showed (`working tree`, `index` or a commit
   id), shows only in views of that content, and the envelope heading names it.
 - Every export carries every comment; a successful one marks them sent. Close

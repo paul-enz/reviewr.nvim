@@ -42,8 +42,8 @@ way a pull request does, so commits that landed on `base` later don't show.
 Working-tree reviews (no head ref: `branch`, `uncommitted`, `turn`, `ReviewrOpen main`) include uncommitted edits to tracked files and new files once they are `git add`ed (untracked files never appear); a review with two refs compares commits only.
 Resolve the user's words to real refs first (`git branch -a`,
 `git rev-parse --verify <ref>`), and ask when a name matches nothing or several
-things. "No changes found" with an empty Neovim means the pair has no diff;
-say so rather than retrying.
+things. A review that says "No changes to review" with `changed files (0)`
+means the pair has no diff; say so rather than retrying.
 
 ## Open it beside you
 

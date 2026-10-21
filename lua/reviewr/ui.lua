@@ -188,7 +188,7 @@ function M.open_files_panel(files)
     local win = vim.fn.win_getid(vim.fn.winnr("$"), vim.api.nvim_tabpage_get_number(state.diff.tab))
     vim.api.nvim_win_set_buf(win, buf)
     for opt, val in pairs({ diff = false, scrollbind = false, cursorbind = false, foldenable = false,
-      foldcolumn = "0", winfixheight = true, cursorline = true, number = false,
+      foldcolumn = "0", winfixheight = true, cursorline = true, cursorlineopt = "line", number = false,
       relativenumber = false, signcolumn = "no", wrap = false }) do
       vim.wo[win][opt] = val
     end
@@ -389,6 +389,8 @@ function M.pick(items, opts, on_choice)
   })
   vim.wo[win].winhl = "Normal:Normal,FloatBorder:ReviewrPanelBorder,CursorLine:ReviewrButton"
   vim.wo[win].cursorline = true
+  -- not the diff panes' number-only cursor line it would inherit
+  vim.wo[win].cursorlineopt = "line"
   local done = false
   local function finish(choice)
     if done then return end
