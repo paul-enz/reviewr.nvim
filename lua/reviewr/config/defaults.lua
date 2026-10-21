@@ -12,7 +12,6 @@ M.defaults = {
   private_ref_prefix = "refs/reviewr",
   git = {
     timeout_ms = 20000,
-    use_plenary = true,
   },
   keymaps = true, -- false to skip, or a table of key overrides
   adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },

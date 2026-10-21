@@ -8,6 +8,18 @@ local ui = require("reviewr.ui")
 local store = require("reviewr.store")
 local transport = require("reviewr.transport")
 
+-- `rex events` is never started: watchers get a stream that stays open until
+-- a test ends it through its on_exit.
+local streams = {}
+local jobstart = vim.fn.jobstart
+vim.fn.jobstart = function(cmd, opts)
+  if type(cmd) == "table" and cmd[1] == "rex" then
+    table.insert(streams, opts)
+    return 1000 + #streams
+  end
+  return jobstart(cmd, opts)
+end
+
 local failures, passed = 0, 0
 local function test(name, fn)
   local ok, err = pcall(fn)
@@ -397,6 +409,117 @@ test("the picker moves with j and arrows, picks with Enter, cancels with Esc", f
   ui.pick({ "one", "two" }, { prompt = "Pick" }, function(c) got = c end)
   press("<Esc>")
   eq(got, nil)
+end)
+
+test("refresh keeps both panes where they were", function()
+  git("checkout -q -- .")
+  write(repo .. "/f.txt", vim.split(string.rep("line\n", 60), "\n", { trimempty = true }))
+  assert(reviewr.set_scope("uncommitted"))
+  local d = ui.panes()
+  vim.api.nvim_set_current_win(d.right_win)
+  vim.api.nvim_win_set_cursor(d.right_win, { 40, 0 })
+  assert(reviewr.refresh())
+  eq(vim.api.nvim_win_get_cursor(ui.panes().right_win)[1], 40)
+  eq(vim.api.nvim_get_current_win(), d.right_win, "focus stays")
+  git("checkout -q -- .")
+end)
+
+test(":wq in the comment box saves the comment and keeps the review", function()
+  assert(reviewr.open({ "master" }))
+  store.clear()
+  reviewr.open_file("g.lua")
+  local d = ui.panes()
+  vim.api.nvim_set_current_win(d.right_win)
+  require("reviewr.keymaps").open_comment_box()
+  vim.cmd("stopinsert")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "saved with wq" })
+  vim.cmd("wq")
+  vim.wait(100, function() return store.count() == 1 end)
+  assert(ui.is_open(), "both diff panes still open")
+  eq(store.count(), 1)
+  eq(store.list()[1].body, "saved with wq")
+  eq(vim.api.nvim_get_current_win(), d.right_win, "back in the pane commented on")
+  require("reviewr.keymaps").open_comment_box()
+  vim.cmd("stopinsert")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "dropped" })
+  vim.cmd("q!")
+  vim.wait(100)
+  eq(store.count(), 1, ":q! saves nothing")
+  eq(marks(d.right_buf), 1, "only the saved comment's mark is left")
+  store.clear()
+  ui.redraw()
+end)
+
+test("a watched agent is watched again after its event stream ends", function()
+  local rex = require("reviewr.rex")
+  rex.unwatch_all()
+  rex.watch("session:gone", "block:B", { state = "idle", label = "codex", cb = function() end })
+  assert(rex.watching("block:B"))
+  streams[#streams].on_exit(1001, 1, "exit")
+  assert(not rex.watching("block:B"), "forgotten with its stream")
+  local before = #streams
+  rex.watch("session:gone", "block:B", { state = "idle", label = "codex", cb = function() end })
+  eq(#streams, before + 1, "a new stream")
+  streams[before].on_exit(1001, 1, "exit")
+  assert(rex.watching("block:B"), "a stream stopped earlier does not drop the new one")
+  rex.unwatch_all()
+end)
+
+test("a pasted review cannot end the bracketed paste early", function()
+  local rex = require("reviewr.rex")
+  local terminals, rwrite, focus = rex.terminals, rex.write, rex.focus
+  local data
+  rex.terminals = function()
+    return { { session_id = "session:t", block_id = "block:A", foreground = { argv0 = "codex", cwd = repo } } }
+  end
+  rex.write = function(_, _, d) data = d; return true end
+  rex.focus = function() return true end
+  vim.env.REX_SESSION = "session:t"
+  vim.g.reviewr_agent = { session = "session:t", block = "block:A", name = "codex" }
+  require("reviewr.config").merge({ adapters = { "rex" } })
+  store.clear()
+  reviewr.add_comment({ file = "g.lua", start = 1, body = "a\27[201~b" })
+  assert(reviewr.export("send"))
+  local _, ends = data:gsub("\27%[201~", "")
+  eq(ends, 1)
+  assert(vim.endswith(data, "\27[201~"), "the end marker closes the paste")
+  rex.terminals, rex.write, rex.focus = terminals, rwrite, focus
+  vim.env.REX_SESSION, vim.g.reviewr_agent = nil, nil
+  require("reviewr.config").merge({ adapters = { "neovim-terminal", "filesystem-inbox" } })
+  store.clear()
+end)
+
+test("renames, non-ASCII paths, binary and CRLF files open with their real content", function()
+  local other = vim.fn.resolve(vim.fn.tempname())
+  vim.fn.mkdir(other, "p")
+  local function g(args) return sh("git -C " .. vim.fn.shellescape(other) .. " " .. args) end
+  g("init -q -b main")
+  other = vim.trim(g("rev-parse --show-toplevel"))
+  g("config user.email t@t && git -C " .. other .. " config user.name t")
+  write(other .. "/old name.txt", { "kept", "lines" })
+  write(other .. "/café.txt", { "before" })
+  local function raw(path, bytes) local f = assert(io.open(other .. "/" .. path, "wb")); f:write(bytes); f:close() end
+  raw("bin.dat", "ab\0cd\nef")
+  raw("crlf.txt", "one\r\ntwo\r\n")
+  g("add . && git -C " .. other .. " commit -qm init")
+  g("mv 'old name.txt' renamed.txt")
+  write(other .. "/café.txt", { "after" })
+  raw("bin.dat", "zz\0cd\nef")
+  g("commit -qam change")
+  raw("crlf.txt", "one\r\nTWO\r\n")
+  vim.cmd("cd " .. other)
+  assert(reviewr.open({ "main~1" }))
+  eq(panel_lines(), { "▶ M  bin.dat", "  M  café.txt", "  M  crlf.txt", "  R  renamed.txt" })
+  eq(lines(ui.panes().right_buf), { "zz\0cd", "ef" }, "binary")
+  reviewr.open_file("café.txt")
+  eq({ lines(ui.panes().left_buf), lines(ui.panes().right_buf) }, { { "before" }, { "after" } })
+  reviewr.open_file("renamed.txt")
+  eq(lines(ui.panes().left_buf), { "kept", "lines" }, "the left pane reads the old path")
+  reviewr.open_file("crlf.txt")
+  eq({ lines(ui.panes().left_buf), lines(ui.panes().right_buf) }, { { "one\r", "two\r" }, { "one\r", "TWO\r" } })
+  vim.cmd("cd " .. repo)
+  assert(reviewr.open({ "master" }))
+  vim.fn.delete(other, "rf")
 end)
 
 test("close drops comments and the review tab, even as the only tab", function()

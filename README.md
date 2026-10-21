@@ -27,7 +27,6 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 
 - Neovim ≥ 0.10
 - git
-- Optional: `plenary.nvim` for async jobs
 
 ## Install
 

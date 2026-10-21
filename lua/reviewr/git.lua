@@ -1,46 +1,29 @@
--- reviewr.git: git command execution (sync/async) behind a plenary/fallback backend
+-- reviewr.git: git command execution
 local config = require("reviewr.config")
 
 local M = {}
 
-local function plenary_job()
-  local c = config.get()
-  if not (c.git and c.git.use_plenary) then return nil end
-  local ok, Job = pcall(require, "plenary.job")
-  if not ok then return nil end
-  return Job
+-- Output split into lines the way a file reads: bytes kept as they are (CRs,
+-- NULs), no empty item for the final newline.
+function M.lines(raw)
+  if not raw or raw == "" then return {} end
+  local out = vim.split(raw, "\n", { plain = true })
+  if out[#out] == "" then out[#out] = nil end
+  return out
 end
 
-local function prepare(args, opts)
-  opts = opts or {}
-  local cwd = opts.cwd or vim.fn.getcwd()
-  local cmd_args = { "-C", cwd }
-  vim.list_extend(cmd_args, args or {})
-  return cmd_args, cwd, (opts.timeout or (config.get().git and config.get().git.timeout_ms) or 20000)
-end
-
-local function new_result(code, stdout, stderr, cwd)
-  return { ok = (code or 0) == 0, code = code or 0, stdout = stdout or {}, stderr = stderr or {}, cwd = cwd }
-end
-
+-- stdout and stderr come back apart, as lines; raw_stdout keeps the bytes.
 function M.run_sync(args, opts)
   opts = opts or {}
-  local a, cwd, timeout = prepare(args, opts)
-  local Job = plenary_job()
-  if Job then
-    local stdout, stderr = {}, {}
-    local job = Job:new({
-      command = "git",
-      args = a,
-      on_stdout = function(_, d) table.insert(stdout, d) end,
-      on_stderr = function(_, d) table.insert(stderr, d) end,
-    })
-    job:sync(timeout)
-    return new_result(job.code, stdout, stderr, cwd)
-  end
-
-  local res = vim.fn.systemlist({ "git", unpack(a) })
-  return new_result(vim.v.shell_error, res or {}, {}, cwd)
+  local cwd = opts.cwd or vim.fn.getcwd()
+  local timeout = opts.timeout or (config.get().git and config.get().git.timeout_ms) or 20000
+  local cmd = { "git", "-C", cwd }
+  vim.list_extend(cmd, args or {})
+  local ok, res = pcall(function() return vim.system(cmd):wait(timeout) end)
+  if not ok then res = { code = -1, stdout = "", stderr = tostring(res) } end
+  local code = res.code or -1
+  return { ok = code == 0, code = code, stdout = M.lines(res.stdout), stderr = M.lines(res.stderr),
+    raw_stdout = res.stdout or "", cwd = cwd }
 end
 
 function M.git_root(cwd)

@@ -112,29 +112,41 @@ local function open_comment_box(existing)
 
   ui.mark_range(origin_buf, startl, endl)
 
-  local function finish(save)
-    vim.cmd("stopinsert")
-    local body = vim.trim(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"))
-    if vim.api.nvim_win_is_valid(box) then vim.api.nvim_win_close(box, true) end
-    if vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
-    local reviewr = require("reviewr")
-    if save and body ~= "" then
-      if existing then
-        reviewr.edit_comment(existing.id, body)
-      else
-        reviewr.add_comment({ file = file, side = side, body = body, start = startl, ["end"] = endl })
+  -- :w saves and closes the box; <esc>, :q! or :wq close it. Leaving runs once,
+  -- when the box closes, so :wq's quit closes the box and not the diff pane
+  -- focus returned to.
+  local body, done
+  local function leave()
+    if done then return end
+    done = true
+    vim.schedule(function()
+      if vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
+      local reviewr = require("reviewr")
+      if body and body ~= "" then
+        if existing then
+          reviewr.edit_comment(existing.id, body)
+        else
+          reviewr.add_comment({ file = file, side = side, body = body, start = startl, ["end"] = endl })
+        end
       end
-    end
-    ui.redraw(origin_buf)
+      ui.redraw(origin_buf)
+    end)
   end
-  vim.keymap.set("n", "<esc>", function() finish(false) end, { buffer = buf, silent = true, nowait = true })
+  local function close()
+    vim.cmd("stopinsert")
+    if vim.api.nvim_win_is_valid(box) then vim.api.nvim_win_close(box, true) end
+  end
+  vim.keymap.set("n", "<esc>", close, { buffer = buf, silent = true, nowait = true })
   vim.api.nvim_create_autocmd("BufWriteCmd", {
     buffer = buf,
     callback = function()
       vim.bo[buf].modified = false
-      finish(true)
+      body = vim.trim(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"))
+      -- after this write: :wq goes on to quit the box itself
+      vim.schedule(close)
     end,
   })
+  vim.api.nvim_create_autocmd("WinClosed", { pattern = tostring(box), once = true, callback = leave })
 end
 
 M.open_comment_box = open_comment_box

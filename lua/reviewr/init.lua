@@ -110,15 +110,22 @@ function M.setup(opts)
   return M
 end
 
--- ref: a commit-ish, ":" for the index, nil for the working tree.
-local function buf_from_ref(repo, ref, path, side)
+-- ref: a commit-ish, ":" for the index, nil for the working tree. source:
+-- where the content lives at ref when it differs from path (a rename's old
+-- path). Both sides keep the bytes as git has them, CRs and NULs included.
+local function buf_from_ref(repo, ref, path, side, source)
+  source = source or path
   local buf = vim.api.nvim_create_buf(false, true)
   local lines = {}
   if ref == nil then
-    local full = repo .. "/" .. path
-    if vim.fn.filereadable(full) == 1 then lines = vim.fn.readfile(full) end
+    local full = repo .. "/" .. source
+    local f = vim.fn.filereadable(full) == 1 and io.open(full, "rb")
+    if f then
+      lines = git.lines(f:read("*a"))
+      f:close()
+    end
   else
-    lines = git.show((ref == ":" and ":" or (ref .. ":")) .. path, repo) or {}
+    lines = git.show((ref == ":" and ":" or (ref .. ":")) .. source, repo) or {}
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].buftype = "nofile"
@@ -132,21 +139,29 @@ local function buf_from_ref(repo, ref, path, side)
 end
 
 -- Against the working tree, the diff is against a snapshot of its tracked
--- files, so staged new files count and untracked ones don't.
+-- files, so staged new files count and untracked ones don't. Read
+-- NUL-separated, so paths come back unquoted; a rename or copy carries its old
+-- path, which the left pane reads.
 local function changed_files(repo, base_ref, head_ref)
   local args
   if head_ref == ":" then
-    args = { "diff", "--name-status", "--cached", base_ref }
+    args = { "diff", "--name-status", "-z", "--cached", base_ref }
   elseif head_ref then
-    args = { "diff", "--name-status", base_ref, head_ref }
+    args = { "diff", "--name-status", "-z", base_ref, head_ref }
   else
-    args = { "diff", "--name-status", base_ref, git.snapshot(repo) }
+    args = { "diff", "--name-status", "-z", base_ref, git.snapshot(repo) }
   end
-  local files = {}
-  for _, l in ipairs(git.run_sync(args, { cwd = repo }).stdout or {}) do
-    local fields = vim.split(l, "\t", { plain = true })
-    if #fields >= 2 then
-      table.insert(files, { status = fields[1]:sub(1, 1), path = fields[#fields] })
+  local fields = vim.split(git.run_sync(args, { cwd = repo }).raw_stdout, "\0", { plain = true })
+  local files, i = {}, 1
+  while fields[i] and fields[i] ~= "" and fields[i + 1] do
+    local status = fields[i]:sub(1, 1)
+    if status == "R" or status == "C" then
+      if not fields[i + 2] then break end
+      table.insert(files, { status = status, path = fields[i + 2], old = fields[i + 1] })
+      i = i + 3
+    else
+      table.insert(files, { status = status, path = fields[i + 1] })
+      i = i + 2
     end
   end
   return files
@@ -191,7 +206,9 @@ function M.open_file(path)
   local s = state.get()
   if not s or not s.files then return false end
   local ui = require("reviewr.ui")
-  local left = buf_from_ref(s.repo, s.base_ref, path, "left")
+  local old
+  for _, f in ipairs(s.files) do if f.path == path then old = f.old; break end end
+  local left = buf_from_ref(s.repo, s.base_ref, path, "left", old)
   local right = buf_from_ref(s.repo, s.head_ref, path, "right")
   ui.show_file(left, right, path)
   local km = config_mod.get().keymaps
@@ -206,17 +223,35 @@ function M.open_file(path)
   return true
 end
 
--- Loads the session's file list and shows `prefer` (or the first file).
-local function load(prefer)
+-- Loads the session's file list (or takes `files`, already read) and shows
+-- `prefer` (or the first file). keep_view: reloading the file in view keeps
+-- both panes where they were.
+local function load(prefer, files, keep_view)
   local s = state.get()
-  s.files = changed_files(s.repo, s.base_ref, s.head_ref)
+  s.files = files or changed_files(s.repo, s.base_ref, s.head_ref)
   if #s.files == 0 then
     vim.notify("reviewr: no changes found", vim.log.levels.INFO)
     return false
   end
   local target = s.files[1].path
   for _, f in ipairs(s.files) do if f.path == prefer then target = prefer; break end end
-  return M.open_file(target)
+  local ui = require("reviewr.ui")
+  local d = ui.panes()
+  local views = {}
+  if keep_view and ui.is_open() and d.file == target then
+    for _, win in ipairs({ d.left_win, d.right_win }) do
+      views[win] = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+    end
+  end
+  local active = vim.api.nvim_get_current_win()
+  if not M.open_file(target) then return false end
+  -- the active pane last, so cursorbind doesn't drag it after the other
+  for _, win in ipairs({ d.left_win, d.right_win, active }) do
+    if views[win] and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_call(win, function() vim.fn.winrestview(views[win]) end)
+    end
+  end
+  return true
 end
 
 local function start(repo, base_ref, head_ref, scope_name, label)
@@ -225,7 +260,8 @@ local function start(repo, base_ref, head_ref, scope_name, label)
     local mb = git.run_sync({ "merge-base", base_ref, head_ref }, { cwd = repo })
     if mb.ok and mb.stdout[1] then base_ref = mb.stdout[1] end
   end
-  if #changed_files(repo, base_ref, head_ref) == 0 then
+  local files = changed_files(repo, base_ref, head_ref)
+  if #files == 0 then
     vim.notify("reviewr: no changes found", vim.log.levels.INFO)
     return false
   end
@@ -236,7 +272,7 @@ local function start(repo, base_ref, head_ref, scope_name, label)
   scope_mod.set({ repo = repo, name = scope_name, label = label, ref = head_ref or "WORKTREE" })
   local s = state.ensure()
   s.repo, s.base_ref, s.head_ref, s.scope = repo, base_ref, head_ref, scope_mod.get()
-  if not load(prefer) then return false end
+  if not load(prefer, files) then return false end
   local trigger = baseline_trigger()
   if trigger == "open" or (trigger == "agent" and not turn.last_turn_sha(repo, turn_scope())) then
     turn.mark_turn({ repo = repo, scope = turn_scope() })
@@ -318,7 +354,7 @@ end
 
 function M.refresh()
   if not state.get() or not state.get().files then return false end
-  return load(require("reviewr.ui").panes().file)
+  return load(require("reviewr.ui").panes().file, nil, true)
 end
 
 function M.add_comment(input)

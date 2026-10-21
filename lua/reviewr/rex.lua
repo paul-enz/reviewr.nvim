@@ -63,7 +63,7 @@ end
 -- ---------- program status ----------
 
 local streams = {} -- session_id -> job id
-local watched = {} -- block_id -> { state, label, cb }
+local watched = {} -- block_id -> { session, state, label, cb }
 
 -- One line of `rex events --json`: calls the watcher of a block whose root
 -- status record changed state.
@@ -86,17 +86,26 @@ end
 -- Calls cb(state, previous_state, label) whenever the agent in block_id
 -- reports a new state.
 function M.watch(session_id, block_id, opts)
-  watched[block_id] = { state = opts.state, label = opts.label, cb = opts.cb }
+  watched[block_id] = { session = session_id, state = opts.state, label = opts.label, cb = opts.cb }
   if streams[session_id] then return end
-  local partial = ""
-  streams[session_id] = vim.fn.jobstart({ "rex", "events", "-s", session_id, "--json" }, {
+  local partial, job = "", nil
+  job = vim.fn.jobstart({ "rex", "events", "-s", session_id, "--json" }, {
     on_stdout = function(_, data)
       data[1] = partial .. data[1]
       partial = data[#data]
       for i = 1, #data - 1 do M.handle_event(data[i]) end
     end,
-    on_exit = function() streams[session_id] = nil end,
+    -- the stream is gone (Rex restarted, say): forget its blocks, so the next
+    -- open or send watches them again
+    on_exit = function()
+      if streams[session_id] ~= job then return end
+      streams[session_id] = nil
+      for block, w in pairs(watched) do
+        if w.session == session_id then watched[block] = nil end
+      end
+    end,
   })
+  streams[session_id] = job
 end
 
 function M.watching(block_id)

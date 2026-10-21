@@ -57,8 +57,10 @@ local function in_repo(path, repo_root)
   return type(path) == "string" and (path == repo_root or vim.startswith(path, repo_root .. "/"))
 end
 
+-- An end-of-paste marker inside the payload would end the paste early and
+-- type the rest as keys, so it is dropped.
 local function bracketed(payload)
-  return "\27[200~" .. payload .. "\27[201~"
+  return "\27[200~" .. payload:gsub("\27%[201~", "") .. "\27[201~"
 end
 
 -- ---------- detection ----------
