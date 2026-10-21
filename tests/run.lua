@@ -700,6 +700,43 @@ test("the changed-files panel keeps the configured height, however few files the
   require("reviewr.config").merge({ adapters = { "neovim-terminal", "filesystem-inbox" } })
 end)
 
+test("tmux: the key shows a review beside the pane, hides it, and brings the same one back", function()
+  if vim.fn.executable("tmux") == 0 then return end
+  local sock = "reviewr-test-" .. vim.fn.getpid()
+  local function tmux(...)
+    local r = vim.system(vim.list_extend({ "tmux", "-L", sock, "-f", "/dev/null" }, { ... }), { text = true }):wait()
+    return vim.trim(r.stdout or ""), r.code
+  end
+  tmux("new-session", "-d", "-s", "main", "-x", "200", "-y", "50", "-c", repo)
+  local socket_path = tmux("display", "-p", "#{socket_path}")
+  local env = { TMUX = socket_path .. ",0,0" }
+  tmux("set", "-g", "@reviewr-command", "sleep 600")
+  local _, code = tmux("run-shell", plugin .. "/tmux/reviewr.tmux")
+  eq(code, 0, "loads")
+  assert(tmux("list-keys", "-T", "prefix"):find("prefix R%s+run%-shell[^\n]*toggle%.sh"), "prefix R bound")
+  assert(tmux("list-keys", "-T", "root"):find("root User9%s+run%-shell[^\n]*toggle%.sh"), "cmd+r sequence bound")
+  local first = tmux("display", "-p", "-t", "main", "#{pane_id}")
+  local function toggle(pane)
+    local r = vim.system({ "sh", plugin .. "/tmux/toggle.sh", pane }, { env = env, text = true }):wait()
+    eq(r.code, 0, "toggle " .. (r.stderr or ""))
+  end
+  local function panes(target) return vim.split(tmux("list-panes", "-t", target, "-F", "#{pane_id}\t#{@reviewr}"), "\n") end
+  toggle(first)
+  local shown = panes("main")
+  eq(#shown, 2, "opened beside")
+  local review = vim.split(shown[2], "\t")[1]
+  eq(vim.split(shown[2], "\t")[2], repo, "marked with its repository")
+  toggle(first)
+  eq(#panes("main"), 1, "hidden")
+  assert(vim.tbl_contains(vim.tbl_map(function(l) return vim.split(l, "\t")[1] end, vim.split(
+    tmux("list-panes", "-s", "-t", "=reviewr", "-F", "#{pane_id}"), "\n")), review), "kept running")
+  toggle(first)
+  eq(vim.tbl_map(function(l) return vim.split(l, "\t")[1] end, panes("main")), { first, review }, "the same review back")
+  toggle(review)
+  eq(#panes("main"), 1, "pressed in the review, hides it")
+  tmux("kill-server")
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })

@@ -80,7 +80,33 @@ Check the key is free first (`rex keymap`), then `rex config check` and
 `rex config reload` after every plugin update, since it doesn't watch its
 files.
 
-## 4. Verify
+## 4. tmux integration (only if the user runs tmux outside Rex)
+
+tmux is in use when `tmux` is on the PATH and the user has a `~/.tmux.conf`
+(or `~/.config/tmux/tmux.conf`). The integration binds `prefix R`, and a
+sequence a terminal can send for cmd+r, to show or hide a review beside the
+current pane.
+
+Find `tmux/reviewr.tmux` in the installed copy (with lazy.nvim,
+`$plugin/tmux/reviewr.tmux`) and append to the user's tmux config, guarded so
+a removed plugin doesn't break it:
+
+```tmux
+if-shell 'test -f <path to>/tmux/reviewr.tmux' "run-shell '<path to>/tmux/reviewr.tmux'"
+```
+
+Check `prefix R` is free first (`tmux list-keys -T prefix | grep ' R '`); if
+not, add `set -g @reviewr-key <free key>` before the line. Then
+`tmux source-file <config>` and check `tmux list-keys -T prefix` lists
+`toggle.sh`.
+
+For cmd+r on macOS, add the line for the user's terminal from the README's
+"cmd+r in tmux" table (Ghostty: `keybind = cmd+r=text:\x1b[9001~` in
+`~/.config/ghostty/config`), and tell the user to reload the terminal's config
+(Ghostty: cmd+shift+,). Skip this when the user already binds cmd+r in that
+terminal; ask instead.
+
+## 5. Verify
 
 From the plugin directory: `nvim --headless -u NONE -l tests/run.lua` ends with
 `0 failed`. Then open a review the way the skill describes, on any repository

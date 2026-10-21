@@ -79,6 +79,33 @@ Inside Rex the plugin also:
 - watches the program status of agents working in the repo and of any agent it sends to: when one starts a turn, the turn baseline is snapshotted (`baseline_trigger = "agent"`, the default in Rex), so `:ReviewrScope turn` shows exactly what that turn changed; when it finishes, the open review reloads (`refresh_on_agent`);
 - copies through OSC 52 as well as the `+` register, so `y` reaches your clipboard when Neovim runs on another machine.
 
+## tmux
+
+`tmux/reviewr.tmux` gives tmux the same key outside Rex. `prefix R` shows a review of the current pane's branch, committed or not, against the default branch, in a split to its right. The next press hides it, still running with its comments in a background session named `reviewr`, and the press after brings the same review back. Pressed in a review, it hides that review. Each window keeps one review at a time.
+
+Load it from Neovim's managed copy, as with Rex, at the end of `~/.tmux.conf`:
+
+```tmux
+# lazy.nvim; with vim.pack use ~/.local/share/nvim/site/pack/core/opt/reviewr.nvim
+if-shell 'test -f ~/.local/share/nvim/lazy/reviewr.nvim/tmux/reviewr.tmux' \
+  "run-shell '~/.local/share/nvim/lazy/reviewr.nvim/tmux/reviewr.tmux'"
+```
+
+Then `tmux source-file ~/.tmux.conf`. Set options before that line to change the defaults: `set -g @reviewr-key R`, `set -g @reviewr-size 60%`, `set -g @reviewr-command "nvim -c 'lua vim.g.reviewr_standalone = true' -c 'ReviewrScope branch'"`, `set -g @reviewr-user-key 9`.
+
+### cmd+r in tmux
+
+macOS terminals don't pass Cmd keys to tmux, so the terminal sends a sequence tmux knows (`ESC [9001~`) instead:
+
+| Terminal | Config |
+|---|---|
+| Ghostty (`~/.config/ghostty/config`) | `keybind = cmd+r=text:\x1b[9001~` |
+| kitty (`kitty.conf`) | `map cmd+r send_text all \x1b[9001~` |
+| WezTerm | `{ key = "r", mods = "CMD", action = wezterm.action.SendString("\x1b[9001~") }` |
+| iTerm2 | Settings → Keys → Key Bindings: cmd+r, Send Escape Sequence, `[9001~` |
+
+Outside tmux the shell receives that sequence instead, so cmd+r does nothing useful there. In Rex, use the Rex module: Rex takes cmd+r before tmux sees it.
+
 ## Shell usage
 
 ```sh

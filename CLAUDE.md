@@ -48,6 +48,13 @@ them.
   Rex doesn't watch files; `rex config reload` after the module changes.
 - Copies also go out as OSC 52 inside Rex or over SSH.
 
+**tmux**
+- `tmux/reviewr.tmux` binds `prefix R` and user key `ESC [9001~` (what a
+  terminal sends for cmd+r) to `tmux/toggle.sh`, loaded from Neovim's managed
+  copy behind an `if-shell` guard. Reviews are panes carrying `@reviewr`
+  (their repository); hidden ones wait in the background session `reviewr`.
+  One review per window; unpaired.
+
 **UI**
 - Prompts and pickers are small boxes (`ui.confirm`, `ui.pick`): selection
   highlighted, j/k or arrows, Enter, Esc. Never `vim.ui.select`, `vim.ui.input`
