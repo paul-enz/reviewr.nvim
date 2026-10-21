@@ -737,6 +737,14 @@ test("tmux: the key shows a review beside the pane, hides it, and brings the sam
   tmux("kill-server")
 end)
 
+test("the diff panes mark the cursor line by its number only, so no underline crosses the diff", function()
+  vim.o.cursorline = true
+  assert(reviewr.open({ "master", "feature" }))
+  local d = ui.panes()
+  for _, w in ipairs({ d.left_win, d.right_win }) do eq(vim.wo[w].cursorlineopt, "number") end
+  vim.o.cursorline = false
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })

@@ -97,6 +97,9 @@ function M.show_file(left_buf, right_buf, file)
       vim.cmd("diffthis")
     end)
     vim.wo[pair[1]].winbar = bars[i]
+    -- with 'cursorline' on, Neovim underlines the cursor line across diff
+    -- colours; the line number alone marks it
+    vim.wo[pair[1]].cursorlineopt = "number"
   end
   d.left_buf, d.right_buf, d.file = left_buf, right_buf, file
   return d
