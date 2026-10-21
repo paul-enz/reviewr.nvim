@@ -32,6 +32,7 @@ local function highlights()
     ReviewrCommentText = "Comment",
     ReviewrPanelBorder = "FloatBorder",
     ReviewrRange = "Visual",
+    ReviewrRangeSign = "DiagnosticInfo",
     ReviewrButton = "PmenuSel",
   }) do
     vim.api.nvim_set_hl(0, name, { link = link, default = true })
@@ -193,9 +194,10 @@ end
 function M.mark_range(bufnr, startl, endl)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local last = vim.api.nvim_buf_line_count(bufnr)
+  -- marked in the gutter: diff highlighting would hide a line highlight
   for line = startl, math.min(endl, last) do
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ensure_ns(), line - 1, 0, {
-      line_hl_group = "ReviewrRange", priority = 50,
+      sign_text = "▌", sign_hl_group = "ReviewrRangeSign", number_hl_group = "ReviewrRange", priority = 50,
     })
   end
 end
