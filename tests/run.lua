@@ -126,21 +126,21 @@ end)
 test("export copies every comment, naming the file only when there is one", function()
   local ok, n, dest = reviewr.export("clipboard")
   eq({ ok, n, dest }, { true, 1, "clipboard" })
-  local text = vim.fn.getreg("+")
+  local text = vim.fn.getreg('"')
   local feat = vim.trim(git("rev-parse feature")):sub(1, 12)
   assert(text:find("\nfile: g.lua\n", 1, true)
     and text:find("### g.lua:2-2 (right, commit " .. feat .. ")\nwhy uppercase", 1, true), text)
   reviewr.add_comment({ file = "f.txt", side = "left", start = 2, body = "second" })
   reviewr.export("clipboard")
-  assert(not vim.fn.getreg("+"):find("\nfile:", 1, true), "file header with two files")
+  assert(not vim.fn.getreg('"'):find("\nfile:", 1, true), "file header with two files")
 end)
 
 test("export is all-or-none", function()
   local bad = reviewr.add_comment({ file = "f.txt", start = 1, body = "" })
-  vim.fn.setreg("+", "untouched")
+  vim.fn.setreg('"', "untouched")
   local ok, reason = reviewr.export("clipboard")
   eq({ ok, reason }, { false, "empty body" })
-  eq(vim.fn.getreg("+"), "untouched")
+  eq(vim.fn.getreg('"'), "untouched")
   reviewr.delete_comment(bad.id)
 end)
 
@@ -315,7 +315,8 @@ end)
 
 test("s sends straight to the paired agent; S and a gone agent fall back to choosing", function()
   local rex = require("reviewr.rex")
-  local terminals, write, focus, select = rex.terminals, rex.write, rex.focus, ui.pick
+  local terminals, write, focus, select, available = rex.terminals, rex.write, rex.focus, ui.pick, rex.available
+  rex.available = function() return true end
   local alive = true
   rex.terminals = function()
     return alive and { { session_id = "session:t", block_id = "block:A", title = "fixing limiter",
@@ -338,7 +339,7 @@ test("s sends straight to the paired agent; S and a gone agent fall back to choo
   alive, picked = false, nil
   local _, _, gone = reviewr.export("send")
   assert(gone and gone:find(".reviewr/inbox", 1, true), tostring(gone))
-  rex.terminals, rex.write, rex.focus, ui.pick = terminals, write, focus, select
+  rex.terminals, rex.write, rex.focus, ui.pick, rex.available = terminals, write, focus, select, available
   vim.env.REX_SESSION = nil
   require("reviewr.config").merge({ adapters = { "neovim-terminal", "filesystem-inbox" } })
   vim.g.reviewr_agent = nil
@@ -552,7 +553,7 @@ test("a comment names the content it was made on and shows only where that conte
   vim.cmd("ReviewrComment on the working tree")
   local base = vim.trim(git("merge-base master HEAD"))
   local _, _, _ = reviewr.export("clipboard")
-  local text = vim.fn.getreg("+")
+  local text = vim.fn.getreg('"')
   assert(text:find("### g.lua:2-2 (left, commit " .. base:sub(1, 12) .. ")", 1, true), text)
   assert(text:find("### g.lua:1-1 (right, working tree)", 1, true), text)
   eq(git("show " .. base:sub(1, 12) .. ":g.lua"), "one\ntwo\nthree\n", "the named commit resolves")
@@ -574,7 +575,7 @@ test("a left comment on a renamed file names the old path", function()
   vim.api.nvim_set_current_win(ui.panes().left_win)
   vim.cmd("ReviewrComment old name")
   reviewr.export("clipboard")
-  assert(vim.fn.getreg("+"):find("### g.lua:1-1 (left, commit ", 1, true), vim.fn.getreg("+"))
+  assert(vim.fn.getreg('"'):find("### g.lua:1-1 (left, commit ", 1, true), vim.fn.getreg('"'))
   git("mv h.lua g.lua")
   store.clear()
 end)

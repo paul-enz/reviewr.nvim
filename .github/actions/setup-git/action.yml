@@ -1,0 +1,7 @@
+name: Install git
+description: Rootless git for the proxmox runners, which have no git and no sudo.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
