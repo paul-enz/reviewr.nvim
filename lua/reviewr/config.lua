@@ -16,6 +16,10 @@ local function validate(opts)
   if opts.log_level and not levels[opts.log_level] then
     error("reviewr: invalid log_level " .. tostring(opts.log_level))
   end
+  local h = opts.files_panel_height
+  if h ~= nil and (type(h) ~= "number" or h < 1 or h % 1 ~= 0) then
+    error("reviewr: invalid files_panel_height " .. tostring(h))
+  end
   if opts.agents ~= nil then
     if type(opts.agents) ~= "table" or not vim.iter(opts.agents):all(function(a) return type(a) == "string" end) then
       error("reviewr: invalid agents " .. vim.inspect(opts.agents))

@@ -11,7 +11,6 @@ local state = {
 M.config = {
   panel_width = 60,
   panel_height = 20,
-  files_panel_height = 10,
   border = "rounded",
 }
 
@@ -165,7 +164,8 @@ function M.open_files_panel(files)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].filetype = "reviewr-files"
-    local height = math.max(2, math.min(#files_panel.files, M.config.files_panel_height)) + 1
+    -- the rows, plus the title bar
+    local height = require("reviewr.config").get().files_panel_height + 1
     vim.api.nvim_win_call(state.diff.left_win, function() vim.cmd("botright " .. height .. "split") end)
     local win = vim.fn.win_getid(vim.fn.winnr("$"), vim.api.nvim_tabpage_get_number(state.diff.tab))
     vim.api.nvim_win_set_buf(win, buf)

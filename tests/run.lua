@@ -679,6 +679,24 @@ test("cmd+r elsewhere keeps one unpaired review per repository per window", func
   eq(calls[1].params.layout.block.label, "review")
 end)
 
+test("the changed-files panel keeps the configured height, however few files there are", function()
+  local function rows()
+    local win = ui.files_panel().win
+    return vim.api.nvim_win_get_height(win) - (vim.wo[win].winbar ~= "" and 1 or 0)
+  end
+  require("reviewr").close()
+  assert(reviewr.open({ "master", "feature" }))
+  eq(rows(), 10, "default")
+  require("reviewr").close()
+  require("reviewr.config").merge({ files_panel_height = 6, adapters = { "neovim-terminal", "filesystem-inbox" } })
+  assert(reviewr.open({ "master", "feature" }))
+  eq(#ui.files_panel().files, 4)
+  eq(rows(), 6, "configured")
+  local ok = pcall(require("reviewr.config").merge, { files_panel_height = 0 })
+  assert(not ok, "rejects 0")
+  require("reviewr.config").merge({ adapters = { "neovim-terminal", "filesystem-inbox" } })
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })

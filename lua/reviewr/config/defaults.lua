@@ -14,6 +14,7 @@ M.defaults = {
     timeout_ms = 20000,
   },
   keymaps = true, -- false to skip, or a table of key overrides
+  files_panel_height = 10, -- rows of the changed-files panel, under its title
   adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
   -- programs that count as agents, matched by executable name
   agents = { "claude", "codex", "opencode", "aider", "goose", "cline", "pi" },

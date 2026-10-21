@@ -99,6 +99,7 @@ CONFIGURATION                                           *reviewr-config*
     refresh_on_agent = true,     -- reload when a watched agent finishes
     send_mode = "queue",         -- queue | submit
     keymaps = true,              -- false, or a table such as { send = "S" }
+    files_panel_height = 10,     -- rows of the changed-files panel
     adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
     agents = { "claude", "codex", "opencode", "aider", "goose", "cline", "pi" },
   })

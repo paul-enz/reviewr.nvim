@@ -175,6 +175,7 @@ require("reviewr").setup({
   send_mode = "queue",         -- queue | submit
   private_ref_prefix = "refs/reviewr",
   keymaps = true,              -- false, or a table such as { send = "S" }
+  files_panel_height = 10,     -- rows of the changed-files panel
   adapters = { "neovim-terminal", "tmux", "rex", "wezterm", "filesystem-inbox" },
   agents = { "claude", "codex", "opencode", "aider", "goose", "cline", "pi" }, -- programs that count as agents
 })
