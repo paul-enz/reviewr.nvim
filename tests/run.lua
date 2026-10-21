@@ -315,6 +315,15 @@ test("s sends straight to the paired agent; S and a gone agent fall back to choo
   store.clear()
 end)
 
+test("the diff panes share the width evenly after Neovim is resized", function()
+  assert(reviewr.set_scope("branch"))
+  local d = ui.panes()
+  vim.api.nvim_win_set_width(d.left_win, 10)
+  vim.api.nvim_exec_autocmds("VimResized", {})
+  local l, r = vim.api.nvim_win_get_width(d.left_win), vim.api.nvim_win_get_width(d.right_win)
+  assert(math.abs(l - r) <= 1, l .. " vs " .. r)
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })

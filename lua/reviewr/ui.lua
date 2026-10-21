@@ -45,6 +45,12 @@ function M.setup(opts)
     group = vim.api.nvim_create_augroup("reviewr_highlights", { clear = true }),
     callback = highlights,
   })
+  -- a review often opens before its terminal reaches full size, and Neovim
+  -- would hand all the new width to the right pane
+  vim.api.nvim_create_autocmd("VimResized", {
+    group = vim.api.nvim_create_augroup("reviewr_resize", { clear = true }),
+    callback = function() M.equalize() end,
+  })
 end
 
 -- ---------- review tab ----------
@@ -64,6 +70,14 @@ function M.open_tab()
   local right_win = vim.api.nvim_get_current_win()
   state.diff = { tab = vim.api.nvim_get_current_tabpage(), left_win = left_win, right_win = right_win }
   return state.diff
+end
+
+-- Splits the width of the two diff panes evenly.
+function M.equalize()
+  if not M.is_open() then return end
+  local d = state.diff
+  local total = vim.api.nvim_win_get_width(d.left_win) + vim.api.nvim_win_get_width(d.right_win)
+  vim.api.nvim_win_set_width(d.left_win, math.floor(total / 2))
 end
 
 function M.focus_tab()
@@ -168,6 +182,7 @@ function M.open_files_panel(files)
     end)
     map("q", function() require("reviewr.keymaps").quit() end)
     if valid_win(origin) then vim.api.nvim_set_current_win(origin) end
+    M.equalize()
   end
   M.render_files_panel()
 end
