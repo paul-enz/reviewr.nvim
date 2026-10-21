@@ -5,7 +5,8 @@ M.defaults = {
   comment = "c",   -- comment on the current line or visual selection
   edit    = "e",   -- edit the comment under the cursor
   delete  = "d",   -- delete the comment under the cursor
-  send    = "s",   -- send every comment to the running agent
+  send    = "s",   -- send every comment to the running agent (the paired one, if any)
+  pick    = "S",   -- send, choosing the agent
   copy    = "y",   -- copy every comment to the clipboard
   panel   = "l",   -- list comments
   nextc   = "n",   -- next comment
@@ -27,6 +28,7 @@ M.legend = {
   { "n",  "next comment" },
   { "N",  "previous comment" },
   { "s",  "send comments to the agent" },
+  { "S",  "send, choosing the agent" },
   { "y",  "copy comments" },
   { "l",  "list comments" },
   { "]c", "next change" },
@@ -162,8 +164,8 @@ local function report(ok, res, dest)
   vim.notify("reviewr: " .. msg, vim.log.levels.INFO)
 end
 
-local function export(target)
-  require("reviewr").export(target, report)
+local function export(target, opts)
+  require("reviewr").export(target, report, opts)
 end
 
 local function jump_file(dir)
@@ -181,6 +183,7 @@ function M.apply(bufnr, overrides)
     { keys.edit,    edit_here },
     { keys.delete,  delete_here },
     { keys.send,    function() export("send") end },
+    { keys.pick,    function() export("send", { pick = true }) end },
     { keys.copy,    function() export("clipboard") end },
     { keys.panel,   function() ui.toggle_panel() end },
     { keys.nextc,   function() require("reviewr").jump_comment(1) end },

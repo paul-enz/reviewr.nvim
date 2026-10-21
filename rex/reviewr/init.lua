@@ -1,5 +1,7 @@
--- Rex integration for reviewr.nvim: a key that shows a review of the focused
--- terminal's repository in a split to its right, and hides it again.
+-- Rex integration for reviewr.nvim: a key that shows a review beside the
+-- focused terminal and hides it again. Pressed in an agent's terminal, the
+-- review is paired with that agent: it tracks that agent's turns and sends
+-- to it.
 local M = {}
 
 local TERMINAL = "com.superlogical.terminal"
@@ -13,15 +15,26 @@ M.config = {
   nvim = "nvim",
   -- the share of the row the focused terminal keeps
   ratio = 0.4,
+  -- programs that count as agents, matched by executable name
+  agents = { "claude", "codex", "opencode", "aider", "goose", "cline", "pi" },
 }
 
 local LABEL = "review"
 
-local function cwd_of(session_id, block_id)
+local function foreground(session_id, block_id)
   local ok, proc = pcall(rex.call, "block.method",
     { session_id = session_id, block_id = block_id, method = "process" })
-  local fg = ok and type(proc) == "table" and proc.foreground or nil
-  return fg and fg.cwd or ""
+  return ok and type(proc) == "table" and proc.foreground or {}
+end
+
+local function agent_name(fg)
+  for _, n in ipairs({ fg.argv0, fg.name, fg.invoked_path }) do
+    local base = type(n) == "string" and n:match("([^/]+)$")
+    for _, a in ipairs(M.config.agents) do
+      if base == a then return a end
+    end
+  end
+  return nil
 end
 
 local function repo_of(cwd)
@@ -31,21 +44,26 @@ local function repo_of(cwd)
   return top or cwd
 end
 
--- The review panes of the session: blocks this module opened, which keep the
--- label it gave them.
-local function reviews(session_id)
-  local ok, res = pcall(rex.call, "session.list_blocks", { session_id = session_id })
-  local out = {}
-  for _, b in ipairs(ok and res.blocks or {}) do
-    if b.label == LABEL then out[#out + 1] = b end
-  end
-  return out
+local function is_review(b)
+  return b.label == LABEL or (b.label or ""):sub(1, #LABEL + 1) == LABEL .. ":"
 end
 
-local function open_new(session_id, block_id, cwd)
+local function blocks_of(session_id)
+  local ok, res = pcall(rex.call, "session.list_blocks", { session_id = session_id })
+  return ok and res.blocks or {}
+end
+
+local function open_new(session_id, anchor, cwd, label, pre)
+  local command = { M.config.nvim }
+  if pre then
+    command[#command + 1] = "-c"
+    command[#command + 1] = pre
+  end
+  command[#command + 1] = "-c"
+  command[#command + 1] = M.config.command
   return rex.call("session.new_split", {
     session_id = session_id,
-    anchor_id = block_id,
+    anchor_id = anchor,
     direction = "horizontal",
     side = "after",
     ratio = M.config.ratio,
@@ -53,46 +71,73 @@ local function open_new(session_id, block_id, cwd)
     layout = {
       block = {
         flavor = TERMINAL .. ".shell",
-        label = LABEL,
-        options = { command = { M.config.nvim, "-c", M.config.command }, cwd = cwd },
+        label = label,
+        options = { command = command, cwd = cwd },
       },
     },
   })
 end
 
--- Hides the review shown in this window, keeping it running with its
--- comments; else brings back the hidden review of this repository; else opens
--- a new one, in a split right of the focused terminal.
+local function hide(session_id, b)
+  return rex.call("session.detach_block", { session_id = session_id, block_id = b.block_id })
+end
+
+local function show(session_id, b, anchor)
+  local res = rex.call("session.move_block", {
+    session_id = session_id,
+    block_id = b.block_id,
+    anchor_block_id = anchor,
+    direction = "horizontal",
+    side = "after",
+    ratio = M.config.ratio,
+  })
+  rex.call("session.focus_block", { session_id = session_id, block_id = b.block_id })
+  return res
+end
+
+-- Pressed in a review: hides it. Pressed in an agent's terminal: shows or
+-- hides that agent's review, opening one paired with the agent the first
+-- time. Pressed in any other terminal: hides the unpaired review in this
+-- window, else brings back or opens the unpaired review of its repository.
+-- Hidden reviews keep running with their comments.
 function M.toggle(ctx)
   local session_id = ctx.session_id or rex.session_id
   local block_id = ctx.block_id or rex.block_id
-  local all = reviews(session_id)
-  local window
-  for _, b in ipairs(rex.call("session.list_blocks", { session_id = session_id }).blocks or {}) do
-    if b.block_id == block_id then window = b.window_id end
+  local blocks = blocks_of(session_id)
+  local focused
+  for _, b in ipairs(blocks) do
+    if b.block_id == block_id then focused = b end
   end
-  for _, b in ipairs(all) do
-    if b.placement == "placed" and b.window_id == window then
-      return rex.call("session.detach_block", { session_id = session_id, block_id = b.block_id })
+  if focused and is_review(focused) then return hide(session_id, focused) end
+
+  local fg = foreground(session_id, block_id)
+  local cwd = fg.cwd or ""
+  local agent = agent_name(fg)
+  if agent then
+    local label = LABEL .. ":" .. block_id
+    for _, b in ipairs(blocks) do
+      if b.label == label then
+        if b.placement == "placed" then return hide(session_id, b) end
+        return show(session_id, b, block_id)
+      end
+    end
+    local pairing = string.format("lua vim.g.reviewr_agent = { session = %q, block = %q, name = %q }",
+      session_id, block_id, agent)
+    return open_new(session_id, block_id, cwd, label, pairing)
+  end
+
+  for _, b in ipairs(blocks) do
+    if b.label == LABEL and b.placement == "placed" and focused and b.window_id == focused.window_id then
+      return hide(session_id, b)
     end
   end
-  local cwd = cwd_of(session_id, block_id)
   local repo = repo_of(cwd)
-  for _, b in ipairs(all) do
-    if b.placement ~= "placed" and repo_of(cwd_of(session_id, b.block_id)) == repo then
-      local res = rex.call("session.move_block", {
-        session_id = session_id,
-        block_id = b.block_id,
-        anchor_block_id = block_id,
-        direction = "horizontal",
-        side = "after",
-        ratio = M.config.ratio,
-      })
-      rex.call("session.focus_block", { session_id = session_id, block_id = b.block_id })
-      return res
+  for _, b in ipairs(blocks) do
+    if b.label == LABEL and b.placement ~= "placed" and repo_of(foreground(session_id, b.block_id).cwd or "") == repo then
+      return show(session_id, b, block_id)
     end
   end
-  return open_new(session_id, block_id, cwd)
+  return open_new(session_id, block_id, cwd, LABEL)
 end
 
 M.open = M.toggle

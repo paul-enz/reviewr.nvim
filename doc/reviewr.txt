@@ -44,7 +44,8 @@ In the diff panes:
   e     edit the comment under the cursor
   d     delete the comment under the cursor
   n N   next / previous comment
-  s     send every comment to the running agent
+  s     send every comment to the running agent (the paired one, if any)
+  S     send, choosing the agent
   y     copy every comment to the clipboard
   l     list comments
   ]c [c next / previous change
@@ -65,6 +66,9 @@ terminals of other sessions must work in the repository. With several
 agents, a picker lists them by terminal title. With none it writes
 <repo>/.reviewr/inbox/, and failing that copies to the clipboard. After
 sending, the agent's terminal comes forward.
+
+A review opened with cmd+r in an agent's Rex terminal is paired with that
+agent: s sends to it, and only its turns move the review's own turn baseline.
 
 In Rex the plugin watches the status that agents report. When a watched agent
 starts a turn, the turn baseline is snapshotted, so :ReviewrScope turn shows

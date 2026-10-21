@@ -58,8 +58,11 @@ rex split -s "$REX_SESSION" -b "$REX_BLOCK" --split=right --ratio 60 -c "$repo" 
 Save the block ID it prints (`--json`, `.block_ids[0]`). With the Rex
 integration installed, the user toggles a review with cmd+r: it opens
 `ReviewrScope branch` beside the focused terminal, hides it (the block is
-detached but keeps running, comments and all), and shows it again. Those
-blocks are labelled `review`. Before opening one, look for a `review` block of
+detached but keeps running, comments and all), and shows it again. Pressed in an
+agent's terminal, cmd+r pairs the review with that agent (block label
+`review:<agent block>`, `vim.g.reviewr_agent` inside Neovim): `s` sends to it
+and the turn view follows only its turns. Unpaired reviews are labelled
+`review`. Before opening one, look for a `review` block of
 the same repository in `rex api call session.list_blocks '{"session_id": "'"$REX_SESSION"'"}'`:
 if it is detached, show it with `session.move_block` beside your terminal
 rather than opening a second review.

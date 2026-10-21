@@ -92,31 +92,45 @@ local function tmux_candidates(repo_root)
   return cands
 end
 
+local function rex_cand(t, repo_root)
+  local fg = t.foreground or {}
+  local name
+  for _, n in ipairs({ fg.argv0, fg.name, fg.invoked_path }) do
+    if is_agent(basename(n)) then name = basename(n); break end
+  end
+  if not name or t.block_id == vim.env.REX_BLOCK then return nil end
+  local own = t.session_id == vim.env.REX_SESSION
+  local here = in_repo(fg.cwd, repo_root)
+  local title = (t.title and t.title ~= "") and t.title or t.block_label or t.block_id
+  return {
+    id = t.block_id,
+    transport = "rex",
+    label = string.format("%s — %s (%s)", name, title, t.session_label or t.session_id),
+    conf = here and (own and 0.88 or 0.86) or 0.6,
+    state = t.state,
+    own = own,
+    here = here,
+    meta = { session = t.session_id },
+  }
+end
+
 -- Every agent in Neovim's own Rex session, wherever it works, and agents in
 -- other sessions that work in the repo.
 function M.rex_candidates(repo_root)
   local cands = {}
   for _, t in ipairs(require("reviewr.rex").terminals()) do
-    local fg = t.foreground or {}
-    local name
-    for _, n in ipairs({ fg.argv0, fg.name, fg.invoked_path }) do
-      if is_agent(basename(n)) then name = basename(n); break end
-    end
-    local own = t.session_id == vim.env.REX_SESSION
-    local here = in_repo(fg.cwd, repo_root)
-    if name and t.block_id ~= vim.env.REX_BLOCK and (own or here) then
-      local title = (t.title and t.title ~= "") and t.title or t.block_label or t.block_id
-      table.insert(cands, {
-        id = t.block_id,
-        transport = "rex",
-        label = string.format("%s — %s (%s)", name, title, t.session_label or t.session_id),
-        conf = here and (own and 0.88 or 0.86) or 0.6,
-        state = t.state,
-        meta = { session = t.session_id },
-      })
-    end
+    local c = rex_cand(t, repo_root)
+    if c and (c.own or c.here) then table.insert(cands, c) end
   end
   return cands
+end
+
+-- The agent running in one Rex terminal, if it still runs one.
+function M.rex_candidate(block_id)
+  for _, t in ipairs(require("reviewr.rex").terminals()) do
+    if t.block_id == block_id then return rex_cand(t, nil) end
+  end
+  return nil
 end
 
 local function wezterm_candidates(repo_root)
@@ -212,7 +226,8 @@ function M.write_inbox(repo, payload)
 end
 
 -- Delivers the envelope to the running agent, asking which one when there
--- are several (most likely first); else the inbox, else the clipboard. Calls
+-- are several or opts.pick is set (most likely first); else the inbox, else
+-- the clipboard. Calls
 -- cb(transport, label, candidate), or cb(nil, "cancelled") when the choice is
 -- dismissed.
 function M.send(envelope, opts, cb)
@@ -226,16 +241,17 @@ function M.send(envelope, opts, cb)
     require("reviewr.clipboard").copy(envelope)
     return cb("clipboard", "clipboard")
   end
-  if opts.inbox_only then return fallback() end
-  local cands = vim.tbl_filter(function(c) return enabled(c.transport) end, M.detect(opts.repo))
-  if #cands == 0 then return fallback() end
   local function deliver(c)
     local adapter = adapters[c.transport]
     if not pcall(adapter.send, c, envelope, opts.mode or "queue") then return fallback() end
     if config.get().focus_agent then pcall(adapter.focus, c) end
     return cb(c.transport, c.label, c)
   end
-  if #cands == 1 then return deliver(cands[1]) end
+  if opts.inbox_only then return fallback() end
+  if opts.target then return deliver(opts.target) end
+  local cands = vim.tbl_filter(function(c) return enabled(c.transport) end, M.detect(opts.repo))
+  if #cands == 0 then return fallback() end
+  if #cands == 1 and not opts.pick then return deliver(cands[1]) end
   vim.ui.select(cands, { prompt = "Send review to", format_item = function(c) return c.label end }, function(c)
     if c then deliver(c) else cb(nil, "cancelled") end
   end)

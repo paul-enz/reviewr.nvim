@@ -20,6 +20,20 @@ local function baseline_trigger()
   return t
 end
 
+-- The agent this review was opened for (Rex sets vim.g.reviewr_agent when
+-- cmd+r is pressed in an agent's terminal), or nil.
+local function paired()
+  local a = vim.g.reviewr_agent
+  return type(a) == "table" and a.block and a or nil
+end
+
+-- A paired review keeps its own turn baseline, so other agents working in the
+-- same repository don't move it.
+local function turn_scope()
+  local a = paired()
+  return { name = a and ("turn-" .. a.block) or "turn" }
+end
+
 local ACTIVE = { working = true, blocked = true }
 local watch_repo
 
@@ -28,7 +42,7 @@ local watch_repo
 local function on_agent(new, old, label)
   if ACTIVE[new] and not ACTIVE[old] then
     if baseline_trigger() == "agent" and watch_repo then
-      turn.mark_turn({ repo = watch_repo, scope = { name = "turn" } })
+      turn.mark_turn({ repo = watch_repo, scope = turn_scope() })
     end
   elseif ACTIVE[old] and not ACTIVE[new] then
     local ui = require("reviewr.ui")
@@ -49,6 +63,7 @@ local function watch_agent(cand)
 end
 
 M._on_agent = on_agent
+M.paired = paired
 
 local function root()
   return git.git_root(vim.fn.getcwd()) or vim.fn.getcwd()
@@ -146,7 +161,7 @@ local function scope_refs(repo, name)
   if name == "uncommitted" then return "HEAD", nil end
   if name == "staged" then return "HEAD", ":" end
   if name == "turn" then
-    local sha = turn.last_turn_sha(repo, { name = "turn" })
+    local sha = turn.last_turn_sha(repo, turn_scope())
     if not sha then return nil, nil, "no turn marked yet; run :ReviewrTurn" end
     return sha, nil
   end
@@ -211,13 +226,20 @@ local function start(repo, base_ref, head_ref, scope_name)
   s.repo, s.base_ref, s.head_ref, s.scope = repo, base_ref, head_ref, scope_mod.get()
   if not load(prefer) then return false end
   local trigger = baseline_trigger()
-  if trigger == "open" or (trigger == "agent" and not turn.last_turn_sha(repo, { name = "turn" })) then
-    turn.mark_turn({ repo = repo, scope = { name = "turn" } })
+  if trigger == "open" or (trigger == "agent" and not turn.last_turn_sha(repo, turn_scope())) then
+    turn.mark_turn({ repo = repo, scope = turn_scope() })
   end
   if require("reviewr.rex").available() then
     watch_repo = repo
-    for _, c in ipairs(require("reviewr.transport").rex_candidates(repo)) do
-      if c.conf > 0.6 then watch_agent(c) end
+    local transport = require("reviewr.transport")
+    local agent = paired()
+    if agent then
+      local cand = transport.rex_candidate(agent.block)
+      if cand then watch_agent(cand) end
+    else
+      for _, c in ipairs(transport.rex_candidates(repo)) do
+        if c.conf > 0.6 then watch_agent(c) end
+      end
     end
   end
   events.emit("Opened", { repo = repo, scope = scope_mod.get(), file = ui.panes().file, files = s.files })
@@ -277,8 +299,8 @@ function M.add_comment(input)
     ["end"] = input["end"] or startl,
     body = input.body or "",
   })
-  if baseline_trigger() == "first_comment" and not turn.last_turn_sha(repo, { name = "turn" }) then
-    turn.mark_turn({ repo = repo, scope = { name = "turn" } })
+  if baseline_trigger() == "first_comment" and not turn.last_turn_sha(repo, turn_scope()) then
+    turn.mark_turn({ repo = repo, scope = turn_scope() })
   end
   events.emit("CommentAdded", { comment = comment })
   return comment
@@ -290,7 +312,7 @@ end
 
 function M.mark_turn(opts)
   opts = opts or {}
-  opts.scope = opts.scope or { name = "turn" }
+  opts.scope = opts.scope or turn_scope()
   return turn.mark_turn(opts)
 end
 
@@ -376,7 +398,9 @@ end
 -- Exports every comment, or none. Reports ok, the count (or the failure
 -- reason) and where the comments went, through cb and, when delivery
 -- finishes at once, the return values.
-function M.export(target, cb)
+-- opts.pick: choose the agent even when the review is paired with one.
+function M.export(target, cb, opts)
+  opts = opts or {}
   local result
   local function finish(...)
     result = { ... }
@@ -404,7 +428,14 @@ function M.export(target, cb)
   end
   local transport = require("reviewr.transport")
   if target == "send" or target == "agent" then
-    transport.send(text, { repo = repo, mode = config_mod.get().send_mode }, delivered)
+    local agent = not opts.pick and paired() or nil
+    local target_cand = agent and transport.rex_candidate(agent.block)
+    if agent and not target_cand then
+      vim.notify("reviewr: " .. agent.name .. " is no longer running in its terminal; choose an agent",
+        vim.log.levels.WARN)
+    end
+    transport.send(text, { repo = repo, mode = config_mod.get().send_mode, target = target_cand, pick = opts.pick },
+      delivered)
   elseif target == "inbox" or target == "filesystem-inbox" then
     transport.send(text, { repo = repo, inbox_only = true }, delivered)
   else

@@ -264,6 +264,57 @@ test("branch scope includes uncommitted edits and staged new files, not untracke
   vim.fn.delete(repo .. "/staged-new.lua")
 end)
 
+test("a review paired with an agent keeps its own turn baseline", function()
+  local rex = require("reviewr.rex")
+  vim.g.reviewr_agent = { session = "session:t", block = "block:A", name = "codex" }
+  local function ref(name) return vim.trim(vim.fn.system({ "git", "-C", repo, "for-each-ref", "--format=%(objectname)",
+    "refs/reviewr/" .. repo:gsub("[^%w%._-]", "_") .. "/" .. name })) end
+  local shared = ref("turn")
+  write(repo .. "/f.txt", { "before A's turn" })
+  rex.watch("session:none", "block:A", { state = "idle", label = "codex", cb = reviewr._on_agent })
+  rex.handle_event(vim.json.encode({ type = "session_event", payload = { event = { type = "block_event", payload = {
+    block_id = "block:A", name = "program_status_changed", payload = { id = "", record = { state = "working" } } } } } }))
+  assert(ref("turn-block_A") ~= "", "paired baseline written")
+  eq(ref("turn"), shared, "the shared baseline is untouched")
+  write(repo .. "/g.lua", { "A's edit" })
+  assert(reviewr.set_scope("turn"))
+  eq(vim.tbl_map(function(f) return f.path end, ui.files_panel().files), { "g.lua" })
+  rex.unwatch_all()
+  vim.g.reviewr_agent = nil
+end)
+
+test("s sends straight to the paired agent; S and a gone agent fall back to choosing", function()
+  local rex = require("reviewr.rex")
+  local terminals, write, focus, select = rex.terminals, rex.write, rex.focus, vim.ui.select
+  local alive = true
+  rex.terminals = function()
+    return alive and { { session_id = "session:t", block_id = "block:A", title = "fixing limiter",
+      foreground = { argv0 = "codex", cwd = repo } } } or {}
+  end
+  local wrote, picked
+  rex.write = function(_, block) wrote = block; return true end
+  rex.focus = function() return true end
+  vim.ui.select = function(items, _, cb) picked = #items; cb(nil) end
+  vim.env.REX_SESSION = "session:t"
+  vim.g.reviewr_agent = { session = "session:t", block = "block:A", name = "codex" }
+  require("reviewr.config").merge({ adapters = { "rex", "filesystem-inbox" } })
+  store.clear()
+  reviewr.add_comment({ file = "g.lua", start = 1, body = "for A" })
+  local ok, _, dest = reviewr.export("send")
+  eq({ ok, wrote, picked }, { true, "block:A", nil })
+  assert(dest:find("codex", 1, true), dest)
+  reviewr.export("send", nil, { pick = true })
+  assert(picked, "S offers the picker")
+  alive, picked = false, nil
+  local _, _, gone = reviewr.export("send")
+  assert(gone and gone:find(".reviewr/inbox", 1, true), tostring(gone))
+  rex.terminals, rex.write, rex.focus, vim.ui.select = terminals, write, focus, select
+  vim.env.REX_SESSION = nil
+  require("reviewr.config").merge({ adapters = { "neovim-terminal", "filesystem-inbox" } })
+  vim.g.reviewr_agent = nil
+  store.clear()
+end)
+
 test("close drops comments and the review tab, even as the only tab", function()
   vim.cmd("tabonly")
   reviewr.add_comment({ file = "g.lua", start = 1, body = "x" })

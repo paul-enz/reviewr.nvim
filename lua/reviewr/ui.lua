@@ -321,8 +321,10 @@ end
 function M.winbar()
   local n = require("reviewr.store").count()
   local s = require("reviewr.scope").get()
+  local agent = require("reviewr").paired()
   local left = "  change " .. (s and s.name and ("│ " .. s.name .. " ") or "")
     .. "│ " .. n .. (n == 1 and " comment" or " comments")
+    .. (agent and ("  → " .. agent.name) or "")
   local right = M.hint(n) .. " "
   local width = vim.api.nvim_win_get_width(vim.g.statusline_winid or 0)
   local gap = width - vim.fn.strwidth(left) - vim.fn.strwidth(right)

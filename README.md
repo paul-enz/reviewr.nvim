@@ -43,7 +43,9 @@ By hand, with lazy.nvim:
 
 ## Rex
 
-`rex/reviewr` is a Rex config module. Linked into `~/.config/rex/reviewr` and enabled in `~/.config/rex/init.lua` (see [INSTALL.md](INSTALL.md); guard the `require` with `pcall`), it binds cmd+r to show or hide a review beside the focused terminal. The first press opens a review of the terminal's branch, committed or not, against the default branch, in a split to its right; the next press hides it, still running with its comments, and the press after brings it back. Each repository keeps one review. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
+`rex/reviewr` is a Rex config module. Linked into `~/.config/rex/reviewr` and enabled in `~/.config/rex/init.lua` (see [INSTALL.md](INSTALL.md); guard the `require` with `pcall`), it binds cmd+r to show or hide a review beside the focused terminal. The first press opens a review of the terminal's branch, committed or not, against the default branch, in a split to its right; the next press hides it, still running with its comments, and the press after brings it back.
+
+Pressed in an agent's terminal, cmd+r opens a review **paired with that agent**: `s` sends to it without asking (`S` still offers the picker), the review follows only that agent's turns, and its turn baseline is its own. Run several agents, each with its own review beside it; with one git worktree per agent, each review's turn view shows exactly its agent's last turn. Agents sharing one working copy see each other's edits in their turn views, since git can't tell who wrote what. Pressed in any other terminal, cmd+r keeps one unpaired review per repository. `setup({ key = "...", command = "ReviewrOpen" })` changes the key or what is reviewed.
 
 Inside Rex the plugin also:
 
@@ -83,7 +85,8 @@ The bar above the change pane always shows the next step. `?` lists every key.
 | `e` | edit the comment under the cursor |
 | `d` | delete the comment under the cursor |
 | `n` / `N` | next / previous comment |
-| `s` | send every comment to the running agent |
+| `s` | send every comment to the running agent (the paired one, if any) |
+| `S` | send, choosing the agent |
 | `y` | copy every comment |
 | `l` | list comments |
 | `]c` / `[c` | next / previous change |
