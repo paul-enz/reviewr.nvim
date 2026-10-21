@@ -144,17 +144,35 @@ end
 -- Against the working tree, the diff is against a snapshot of its tracked
 -- files, so staged new files count and untracked ones don't. Read
 -- NUL-separated, so paths come back unquoted; a rename or copy carries its old
--- path, which the left pane reads.
+-- path, which the left pane reads. Each file also carries its added and
+-- deleted line counts (none for a binary file).
 local function changed_files(repo, base_ref, head_ref)
-  local args
+  local range
   if head_ref == ":" then
-    args = { "diff", "--name-status", "-z", "--cached", base_ref }
+    range = { "--cached", base_ref }
   elseif head_ref then
-    args = { "diff", "--name-status", "-z", base_ref, head_ref }
+    range = { base_ref, head_ref }
   else
-    args = { "diff", "--name-status", "-z", base_ref, git.snapshot(repo) }
+    range = { base_ref, git.snapshot(repo) }
   end
-  local fields = vim.split(git.run_sync(args, { cwd = repo }).raw_stdout, "\0", { plain = true })
+  local function diff(format)
+    local args = { "diff", format, "-z" }
+    vim.list_extend(args, range)
+    return vim.split(git.run_sync(args, { cwd = repo }).raw_stdout, "\0", { plain = true })
+  end
+  local counts, n = {}, 1
+  local stats = diff("--numstat")
+  while stats[n] and stats[n] ~= "" do
+    local added, deleted, path = stats[n]:match("^(%S+)\t(%S+)\t(.*)$")
+    if not added then break end
+    if path == "" then
+      path, n = stats[n + 2], n + 3
+    else
+      n = n + 1
+    end
+    if path then counts[path] = { tonumber(added), tonumber(deleted) } end
+  end
+  local fields = diff("--name-status")
   local files, i = {}, 1
   while fields[i] and fields[i] ~= "" and fields[i + 1] do
     local status = fields[i]:sub(1, 1)
@@ -166,6 +184,10 @@ local function changed_files(repo, base_ref, head_ref)
       table.insert(files, { status = status, path = fields[i + 1] })
       i = i + 2
     end
+  end
+  for _, f in ipairs(files) do
+    local c = counts[f.path] or {}
+    f.added, f.deleted = c[1], c[2]
   end
   return files
 end

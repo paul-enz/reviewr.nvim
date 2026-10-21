@@ -33,6 +33,8 @@ local function highlights()
     ReviewrRange = "Visual",
     ReviewrRangeSign = "DiagnosticInfo",
     ReviewrButton = "PmenuSel",
+    ReviewrAdded = "Added",
+    ReviewrRemoved = "Removed",
   }) do
     vim.api.nvim_set_hl(0, name, { link = link, default = true })
   end
@@ -140,16 +142,29 @@ function M.render_files_panel()
   local store = require("reviewr.store")
   local function at(b) return b and vim.api.nvim_buf_is_valid(b) and vim.b[b].reviewr_at or nil end
   local left_at, right_at = at(state.diff.left_buf), at(state.diff.right_buf)
-  local current, lines = nil, {}
+  -- each row: marker, status, path, then +added -deleted the way octo.nvim
+  -- shows them, then the comment count
+  local current, lines, marks = nil, {}, {}
   for i, f in ipairs(files_panel.files) do
     local here = f.path == state.diff.file
     if here then current = i end
     local n = #store.shown(f.path, "left", left_at) + #store.shown(f.path, "right", right_at)
-    lines[i] = string.format("%s %s  %s%s", here and "▶" or " ", f.status, f.path, n > 0 and ("  💬 " .. n) or "")
+    local line = string.format("%s %s  %s", here and "▶" or " ", f.status, f.path)
+    if f.added then
+      local plus, minus = "+" .. f.added, "-" .. f.deleted
+      table.insert(marks, { i - 1, #line + 2, #line + 2 + #plus, "ReviewrAdded" })
+      table.insert(marks, { i - 1, #line + 3 + #plus, #line + 3 + #plus + #minus, "ReviewrRemoved" })
+      line = line .. "  " .. plus .. " " .. minus
+    end
+    lines[i] = line .. (n > 0 and ("  💬 " .. n) or "")
   end
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, ensure_ns(), 0, -1)
+  for _, m in ipairs(marks) do
+    vim.api.nvim_buf_set_extmark(buf, ensure_ns(), m[1], m[2], { end_col = m[3], hl_group = m[4] })
+  end
   if valid_win(files_panel.win) then
     vim.wo[files_panel.win].winbar = string.format("  changed files (%d)  ", #files_panel.files)
     if current then pcall(vim.api.nvim_win_set_cursor, files_panel.win, { current, 0 }) end

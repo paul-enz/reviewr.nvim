@@ -12,7 +12,7 @@ A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.
 
 ## Features
 
-- A review tab of its own: side-by-side native Vim diff (`]c`/`[c`, folds) over a **changed-files panel** along the bottom, like an octo.nvim review
+- A review tab of its own: side-by-side native Vim diff (`]c`/`[c`, folds) over a **changed-files panel** along the bottom that shows each file's added and deleted lines, like an octo.nvim review
 - Scopes: uncommitted, staged, branch (everything on the branch, committed or not, against its merge base with the default branch), and **turn**: what changed since the last turn baseline
 - Diffs cover files git tracks: commits, edits to tracked files, and new files once `git add`ed; untracked files are left out
 - Line comments on a line or range, anchored by identity (file, side, start, end), never row index; each records the content its side showed (a commit, the index or the working tree) and shows only in views of that content
