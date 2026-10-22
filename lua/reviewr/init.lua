@@ -113,24 +113,23 @@ function M.setup(opts)
   return M
 end
 
+-- A file's lines at ref: nil reads the working tree, ":" the index.
+local function read_lines(repo, ref, path)
+  if ref ~= nil then return git.show((ref == ":" and ":" or (ref .. ":")) .. path, repo) or {} end
+  local full = repo .. "/" .. path
+  local f = vim.fn.filereadable(full) == 1 and io.open(full, "rb")
+  if not f then return {} end
+  local lines = git.lines(f:read("*a"))
+  f:close()
+  return lines
+end
+
 -- ref: a commit-ish, ":" for the index, nil for the working tree. source:
 -- where the content lives at ref when it differs from path (a rename's old
 -- path). Both sides keep the bytes as git has them, CRs and NULs included.
 local function buf_from_ref(repo, ref, path, side, source)
-  source = source or path
   local buf = vim.api.nvim_create_buf(false, true)
-  local lines = {}
-  if ref == nil then
-    local full = repo .. "/" .. source
-    local f = vim.fn.filereadable(full) == 1 and io.open(full, "rb")
-    if f then
-      lines = git.lines(f:read("*a"))
-      f:close()
-    end
-  else
-    lines = git.show((ref == ":" and ":" or (ref .. ":")) .. source, repo) or {}
-  end
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, read_lines(repo, ref, source or path))
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].modifiable = false
@@ -522,35 +521,37 @@ function M.jump_file(dir)
   return nxt
 end
 
--- The side, and the content it showed: "left, commit 1a2b3c4d5e6f",
--- "right, working tree".
-local function where(c)
-  if not c.at then return c.side end
-  if c.at == "working tree" or c.at == "index" then return c.side .. ", " .. c.at end
-  if c.at == EMPTY_TREE then return c.side .. ", empty" end
-  return c.side .. ", commit " .. c.at:sub(1, 12)
+-- The first lines a comment covers, from the content its side showed, quoted
+-- without the indent they share.
+local function quote(repo, c)
+  local ref = c.at
+  if ref == nil or ref == "working tree" then ref = nil elseif ref == "index" then ref = ":" end
+  local lines = read_lines(repo, ref, c.source or c.file)
+  local shown, indent = {}, math.huge
+  for l = c.start, math.min(c["end"], c.start + 2) do
+    if lines[l] then
+      local line = lines[l]:gsub("%s+$", "")
+      table.insert(shown, line)
+      if line ~= "" then indent = math.min(indent, #line:match("^%s*")) end
+    end
+  end
+  local out = {}
+  for _, line in ipairs(shown) do
+    table.insert(out, (("   > " .. line:sub(indent + 1)):gsub("%s+$", "")))
+  end
+  if c["end"] > c.start + 2 then table.insert(out, "   > ...") end
+  return out
 end
 
-local function envelope(repo, comments)
-  local files = {}
-  for _, c in ipairs(comments) do
-    if not vim.tbl_contains(files, c.file) then table.insert(files, c.file) end
+local function message(comments)
+  local lines = { "Code review comments from my editor:" }
+  for i, c in ipairs(comments) do
+    local range = c.start == c["end"] and tostring(c.start) or (c.start .. "-" .. c["end"])
+    vim.list_extend(lines, { "", i .. ". " .. c.file .. ":" .. range })
+    vim.list_extend(lines, quote(c.repo, c))
+    table.insert(lines, "   Comment: " .. (c.body:gsub("\n", "\n   ")))
   end
-  local lines = {
-    "@@REVIEW_BEGIN v1",
-    "id: " .. store.gen_id(),
-    "source: reviewr.nvim",
-    "repo: " .. repo,
-  }
-  if #files == 1 then table.insert(lines, "file: " .. files[1]) end
-  if #comments == 1 then table.insert(lines, "range: " .. comments[1].start .. "-" .. comments[1]["end"]) end
-  vim.list_extend(lines, { "created: " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), "format: markdown", "---" })
-  for _, c in ipairs(comments) do
-    table.insert(lines, string.format("### %s:%d-%d (%s)", c.source or c.file, c.start, c["end"], where(c)))
-    table.insert(lines, c.body)
-    table.insert(lines, "")
-  end
-  table.insert(lines, "@@REVIEW_END")
+  vim.list_extend(lines, { "", "Make the requested changes and answer any questions. Reply per item." })
   return table.concat(lines, "\n")
 end
 
@@ -578,7 +579,7 @@ function M.export(target, cb, opts)
       return finish(false, reason)
     end
   end
-  local text = envelope(repo, comments)
+  local text = message(comments)
   local function delivered(tname, label, cand)
     if not tname then return finish(false, label) end
     if cand then watch_repo = repo; watch_agent(cand) end

@@ -2,7 +2,7 @@
 
 A multiplexer-agnostic Neovim plugin that brings [herdr-reviewr](https://github.com/persiyanov/herdr-reviewr)-style code review to Neovim: open a diff of two branches, comment on lines or ranges, and send the whole review to a running coding agent (Claude Code, Codex, OpenCode, Aider, …), entirely from inside Neovim.
 
-![cmd+r in Claude Code's terminal opens a review of the branch beside it, paired with that agent. `f` moves to auth.lua, `c` on line 23 opens the comment box, `:w` saves the comment, `s` pastes the review into Claude's input, and Enter submits it; Claude starts on the comment.](assets/demo.gif)
+![cmd+r in Claude Code's terminal opens a review of the branch beside it, paired with that agent. `f` moves to auth.lua, `c` on line 23 opens the comment box, `:w` saves the comment, `s` pastes the review into Claude's input (the line, the comment, and a request to act on it), and Enter submits it; Claude starts on the comment.](assets/demo.gif)
 
 ![reviewr.nvim reviewing a branch: the base on the left, the change on the right with two line comments above the lines they're about, every changed file listed along the bottom with its added and deleted lines, and the bar above the change naming the view and the comment count.](assets/screenshot.png)
 
@@ -173,29 +173,32 @@ All buffer-local and remappable through the `keymaps` option or `require("review
 
 With one agent found it sends straight away; with several, a picker lists them, the likeliest first, with each terminal's title. With none it writes the inbox file, and failing that copies to the clipboard. The `adapters` option limits which of these are tried.
 
-## Agent send protocol
+## What the agent receives
 
-Sends a stable envelope:
+Every comment, in file order, as plain text:
+
+![The review as it lands in Claude Code's input: the file and line, the quoted line, the comment, and a closing request to make the changes and answer any questions.](assets/agent.png)
 
 ```
-@@REVIEW_BEGIN v1
-id: <nonce>
-source: reviewr.nvim
-repo: /abs/path
-file: path/relative        (only when every comment is on one file)
-range: 42-88               (only for a single comment)
-created: ISO8601
-format: markdown
----
-### path/relative:42-88 (right, working tree)
-<comment>
+Code review comments from my editor:
 
-@@REVIEW_END
+1. lua/demo/parse.lua:42-48
+   > local ok, err = pcall(decode, s)
+   > if not ok then
+   >   return nil
+   > ...
+   Comment: This swallows the error. Return it to the caller instead.
+
+2. lua/demo/parse.lua:7
+   > local DEFAULT_LIMIT = 5
+   Comment: Why did this default change from 10 to 5?
+
+Make the requested changes and answer any questions. Reply per item.
 ```
 
-Each heading names the side and the content it showed: `working tree`, `index`, or `commit <sha>` (read it with `git show <sha>:<path>`; a left-side comment on a renamed file names the old path). Every export carries every comment; one that succeeds marks them sent, so closing no longer asks about them.
+Each comment gives its file (relative to the repository) and line range, and quotes the first three lines it covers as they were in the version it was made on. Every export carries every comment; one that succeeds marks them sent, so closing no longer asks about them.
 
-Default delivery is **queue** (pasted into the agent input, no Enter); set `send_mode = "submit"` to also submit. Filesystem inbox writes the same envelope to `<repo>/.reviewr/inbox/`, which git ignores.
+Default delivery is **queue** (pasted into the agent input, no Enter); set `send_mode = "submit"` to also submit. Filesystem inbox writes the same text to `<repo>/.reviewr/inbox/`, which git ignores.
 
 ## Configuration
 

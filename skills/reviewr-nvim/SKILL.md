@@ -1,13 +1,13 @@
 ---
 name: reviewr-nvim
-description: Open a reviewr.nvim code review in Neovim for the user (a branch, two refs, staged or uncommitted changes) beside the agent's terminal, drive a review that is already open, and act on the review comments the plugin pastes back. Use when the user asks to review, diff or look over changes in Neovim, to "open the reviewer", or to compare branches, and when a message arrives wrapped in @@REVIEW_BEGIN / @@REVIEW_END.
+description: Open a reviewr.nvim code review in Neovim for the user (a branch, two refs, staged or uncommitted changes) beside the agent's terminal, drive a review that is already open, and act on the review comments the plugin pastes back. Use when the user asks to review, diff or look over changes in Neovim, to "open the reviewer", or to compare branches, and when a message starts with "Code review comments from my editor:".
 ---
 
 # reviewr.nvim
 
 reviewr.nvim opens a review in a Neovim tab: the base on the left, the change on
 the right, and every changed file in a panel along the bottom. The user comments
-on lines; `s` pastes all comments into a running agent's input as one envelope.
+on lines; `s` pastes all comments into a running agent's input as one message.
 You open reviews for the user and act on what comes back. The user does the
 reviewing.
 
@@ -96,22 +96,25 @@ in the user's name.
 A review arrives in your input as:
 
 ```
-@@REVIEW_BEGIN v1
-source: reviewr.nvim
-repo: /abs/path
-...
----
-### path/to/file.lua:42-48 (right, working tree)
-comment text
+Code review comments from my editor:
 
-### other.lua:7-7 (left, commit 1a2b3c4d5e6f)
-comment text
-@@REVIEW_END
+1. lua/demo/parse.lua:42-48
+   > local ok, err = pcall(decode, s)
+   > if not ok then
+   >   return nil
+   > ...
+   Comment: This swallows the error. Return it to the caller instead.
+
+2. lua/demo/parse.lua:7
+   > local DEFAULT_LIMIT = 5
+   Comment: Why did this default change from 10 to 5?
+
+Make the requested changes and answer any questions. Reply per item.
 ```
 
-Each `###` heading is one comment: the file relative to `repo`, the line range,
-the side, and the content that side showed. `working tree` lines number the
-file as it is on disk now (it may have moved on since), `index` the staged
-version, and `commit <sha>` the file at that commit: read
-`git show <sha>:<file>` to see what the lines point at. A left-side comment on
-a renamed file names the old path. Address every comment, or say why one shouldn't be acted on.
+Each numbered item is one comment: the file relative to the repository, the
+line range, the first lines it covers (quoted as the user saw them, `...` when
+there are more) and the comment. A comment on the base side quotes old code, so
+its line numbers may not match the file on disk; go by the quote. Make each
+requested change and answer each question, or say why one shouldn't be acted
+on, and reply per item.

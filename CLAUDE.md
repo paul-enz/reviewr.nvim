@@ -20,7 +20,11 @@ them.
 - With nothing to review the tab still opens, says so, and keeps its keys;
   outside a git repository it doesn't open.
 - A comment records what its side showed (`working tree`, `index` or a commit
-  id), shows only in views of that content, and the envelope heading names it.
+  id) and shows only in views of that content.
+- The agent gets plain text: "Code review comments from my editor:", numbered
+  items (`file:range`, up to three quoted lines from the content commented on,
+  `Comment:`), then "Make the requested changes and answer any questions.
+  Reply per item." No markers, metadata, sides or version tags.
 - Every export carries every comment; a successful one marks them sent. Close
   asks only while some are unsent (new, or edited since).
 

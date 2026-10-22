@@ -1,4 +1,4 @@
--- reviewr.nvim transport layer: mux-agnostic delivery of review envelopes.
+-- reviewr.nvim transport layer: mux-agnostic delivery of the review.
 local config = require("reviewr.config")
 
 local M = {}
@@ -171,7 +171,7 @@ end
 
 -- ---------- delivery ----------
 
--- Each transport pastes the envelope, and can bring its terminal forward.
+-- Each transport pastes the review, and can bring its terminal forward.
 local adapters = {
   ["neovim-terminal"] = {
     send = function(cand, payload, mode)
@@ -232,25 +232,25 @@ function M.write_inbox(repo, payload)
   return path
 end
 
--- Delivers the envelope to the running agent, asking which one when there
+-- Delivers the review to the running agent, asking which one when there
 -- are several or opts.pick is set (most likely first); else the inbox, else
 -- the clipboard. Calls
 -- cb(transport, label, candidate), or cb(nil, "cancelled") when the choice is
 -- dismissed.
-function M.send(envelope, opts, cb)
+function M.send(text, opts, cb)
   opts = opts or {}
   cb = cb or function() end
   local function fallback()
     if opts.repo and enabled("filesystem-inbox") then
-      local ok, path = pcall(M.write_inbox, opts.repo, envelope)
+      local ok, path = pcall(M.write_inbox, opts.repo, text)
       if ok then return cb("filesystem-inbox", path) end
     end
-    require("reviewr.clipboard").copy(envelope)
+    require("reviewr.clipboard").copy(text)
     return cb("clipboard", "clipboard")
   end
   local function deliver(c)
     local adapter = adapters[c.transport]
-    if not pcall(adapter.send, c, envelope, opts.mode or "queue") then return fallback() end
+    if not pcall(adapter.send, c, text, opts.mode or "queue") then return fallback() end
     if config.get().focus_agent then pcall(adapter.focus, c) end
     return cb(c.transport, c.label, c)
   end

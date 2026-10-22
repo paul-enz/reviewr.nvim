@@ -126,16 +126,42 @@ test("a comment stays on its own file and side", function()
   eq(ui.comment_at_cursor().body, "why uppercase")
 end)
 
-test("export copies every comment, naming the file only when there is one", function()
+test("export copies every comment with the lines it points at and asks the agent to act", function()
   local ok, n, dest = reviewr.export("clipboard")
   eq({ ok, n, dest }, { true, 1, "clipboard" })
-  local text = vim.fn.getreg('"')
-  local feat = vim.trim(git("rev-parse feature")):sub(1, 12)
-  assert(text:find("\nfile: g.lua\n", 1, true)
-    and text:find("### g.lua:2-2 (right, commit " .. feat .. ")\nwhy uppercase", 1, true), text)
-  reviewr.add_comment({ file = "f.txt", side = "left", start = 2, body = "second" })
+  eq(vim.fn.getreg('"'), table.concat({
+    "Code review comments from my editor:",
+    "",
+    "1. g.lua:2",
+    "   > TWO",
+    "   Comment: why uppercase",
+    "",
+    "Make the requested changes and answer any questions. Reply per item.",
+  }, "\n"))
+  local c = reviewr.add_comment({ file = "f.txt", side = "right", start = 1, ["end"] = 5, body = "first\nsecond" })
   reviewr.export("clipboard")
-  assert(not vim.fn.getreg('"'):find("\nfile:", 1, true), "file header with two files")
+  assert(vim.fn.getreg('"'):find(table.concat({
+    "1. f.txt:1-5",
+    "   > a",
+    "   > B2",
+    "   > c",
+    "   > ...",
+    "   Comment: first",
+    "   second",
+    "",
+    "2. g.lua:2",
+  }, "\n"), 1, true), vim.fn.getreg('"'))
+  reviewr.delete_comment(c.id)
+end)
+
+test("quoted lines lose the indent they share and keep the rest", function()
+  write(repo .. "/nest.lua", { "if a then", "    if b then", "      go()", "    end", "end" })
+  local c = reviewr.add_comment({ file = "nest.lua", side = "right", start = 2, ["end"] = 3, body = "flatten" })
+  reviewr.export("clipboard")
+  assert(vim.fn.getreg('"'):find("nest.lua:2-3\n   > if b then\n   >   go()\n   Comment: flatten", 1, true),
+    vim.fn.getreg('"'))
+  reviewr.delete_comment(c.id)
+  vim.fn.delete(repo .. "/nest.lua")
 end)
 
 test("export is all-or-none", function()
@@ -565,7 +591,7 @@ test("renames, non-ASCII paths, binary and CRLF files open with their real conte
   vim.fn.delete(other, "rf")
 end)
 
-test("a comment names the content it was made on and shows only where that content is", function()
+test("a comment quotes the content it was made on and shows only where that content is", function()
   store.clear()
   assert(reviewr.open({ "master" }))
   reviewr.open_file("g.lua")
@@ -578,9 +604,8 @@ test("a comment names the content it was made on and shows only where that conte
   local base = vim.trim(git("merge-base master HEAD"))
   local _, _, _ = reviewr.export("clipboard")
   local text = vim.fn.getreg('"')
-  assert(text:find("### g.lua:2-2 (left, commit " .. base:sub(1, 12) .. ")", 1, true), text)
-  assert(text:find("### g.lua:1-1 (right, working tree)", 1, true), text)
-  eq(git("show " .. base:sub(1, 12) .. ":g.lua"), "one\ntwo\nthree\n", "the named commit resolves")
+  assert(text:find("1. g.lua:1\n   > one\n   Comment: on the working tree", 1, true), text)
+  assert(text:find("2. g.lua:2\n   > two\n   Comment: on the merge base", 1, true), text)
   write(repo .. "/g.lua", { "one", "two", "edited" })
   git("commit -qam 'move HEAD'")
   assert(reviewr.set_scope("uncommitted") == nil, "nothing uncommitted")
@@ -592,14 +617,14 @@ test("a comment names the content it was made on and shows only where that conte
   store.clear()
 end)
 
-test("a left comment on a renamed file names the old path", function()
+test("a left comment on a renamed file quotes the old file", function()
   git("mv g.lua h.lua")
   assert(reviewr.set_scope("uncommitted"))
   eq(panel_lines(), { "▶ R  h.lua  +0 -0" })
   vim.api.nvim_set_current_win(ui.panes().left_win)
   vim.cmd("ReviewrComment old name")
   reviewr.export("clipboard")
-  assert(vim.fn.getreg('"'):find("### g.lua:1-1 (left, commit ", 1, true), vim.fn.getreg('"'))
+  assert(vim.fn.getreg('"'):find("1. h.lua:1\n   > one\n", 1, true), vim.fn.getreg('"'))
   git("mv h.lua g.lua")
   store.clear()
 end)

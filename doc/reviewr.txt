@@ -77,9 +77,11 @@ agents, a picker lists them by terminal title. With none it writes
 <repo>/.reviewr/inbox/, and failing that copies to the clipboard. After
 sending, the agent's terminal comes forward.
 
-Programs count as agents by the `agents` option. Each comment's heading in
-the review names its side and content: `(left, commit <sha>)`,
-`(right, working tree)` or `(right, index)`.
+Programs count as agents by the `agents` option. The agent receives every
+comment as a numbered item: the file and line range, the first three lines
+it covers as they were in the version it was made on, and the comment. A
+closing line asks the agent to make the requested changes and answer any
+questions.
 
 A review opened with cmd+r in an agent's Rex terminal is paired with that
 agent: s sends to it, and only its turns move the review's own turn baseline.
