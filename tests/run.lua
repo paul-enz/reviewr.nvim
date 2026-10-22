@@ -153,6 +153,27 @@ test("inbox export writes a git-ignored file", function()
   eq(vim.trim(git("status --porcelain")), "")
 end)
 
+test("Rex terminals are listed even when another session's blocks can't be", function()
+  local system = vim.fn.system
+  vim.fn.system = function(cmd, input)
+    if type(cmd) ~= "table" or cmd[1] ~= "rex" then return system(cmd, input) end
+    _G.rex = { call = function(method, args)
+      if method == "session.list" then return { sessions = { { session_id = "s:other" }, { session_id = "s:own" } } } end
+      if method == "session.list_blocks" then
+        return args.session_id == "s:own" and { blocks = { { block_id = "b:agent" } } } or nil
+      end
+      if args.method == "process" then return { foreground = { name = "claude" } } end
+      return {}
+    end }
+    local ok, out = pcall(load(input))
+    _G.rex = nil
+    return ok and vim.json.encode(out) or ""
+  end
+  local list = require("reviewr.rex").terminals()
+  vim.fn.system = system
+  eq(vim.tbl_map(function(t) return t.block_id end, list), { "b:agent" })
+end)
+
 test("send skips a terminal that is not running an agent", function()
   vim.cmd("tabnew | terminal sleep 30")
   eq(#transport.detect(repo), 0)

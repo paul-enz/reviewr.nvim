@@ -3,13 +3,14 @@
 local M = {}
 
 -- Runs inside Rex (`rex do -`): every terminal's foreground process, title and
--- root status, across all sessions.
+-- root status, across the sessions Rex lists blocks for (a script sees no
+-- blocks in other sessions).
 local LIST_SCRIPT = [[
 local out = {}
 local sessions = rex.call("session.list", {})
 for _, s in ipairs(sessions.sessions or {}) do
-  local blocks = rex.call("session.list_blocks", { session_id = s.session_id })
-  for _, b in ipairs(blocks.blocks or {}) do
+  local ok, blocks = pcall(rex.call, "session.list_blocks", { session_id = s.session_id })
+  for _, b in ipairs(ok and type(blocks) == "table" and blocks.blocks or {}) do
     local function call(method)
       local ok, res = pcall(rex.call, "block.method",
         { session_id = s.session_id, block_id = b.block_id, method = method })
