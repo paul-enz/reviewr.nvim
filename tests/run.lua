@@ -90,6 +90,31 @@ test("<CR> in the panel opens that file", function()
   eq(lines(ui.panes().right_buf), { "one", "TWO", "three", "four" })
 end)
 
+test("the review keys work from the panel too: f moves file, s sends, ? shows the keys", function()
+  local panel = ui.files_panel().win
+  vim.api.nvim_set_current_win(panel)
+  vim.api.nvim_feedkeys("f", "x", false)
+  eq(ui.panes().file, "gone.txt", "f from the panel opens the next file")
+  eq(vim.api.nvim_get_current_win(), panel, "focus stays in the panel")
+  local sent
+  local send = transport.send
+  transport.send = function(text, _, cb) sent = text; cb("stub", "stub") end
+  reviewr.add_comment({ file = "f.txt", start = 1, body = "from the panel" })
+  vim.api.nvim_feedkeys("s", "x", false)
+  transport.send = send
+  assert(sent and sent:find("from the panel", 1, true), "s from the panel sends the comments")
+  store.clear()
+  local wins = #vim.api.nvim_tabpage_list_wins(0)
+  vim.api.nvim_feedkeys("?", "x", false)
+  eq(#vim.api.nvim_tabpage_list_wins(0), wins + 1, "? opens the help box")
+  vim.api.nvim_feedkeys("?", "x", false)
+  eq(#vim.api.nvim_tabpage_list_wins(0), wins, "? closes it again")
+  for _, key in ipairs({ "c", "]c" }) do
+    eq(vim.fn.maparg(key, "n", false, true).buffer, nil, key .. " is not a panel key")
+  end
+  vim.api.nvim_set_current_win(ui.panes().right_win)
+end)
+
 test("the base pane shows the merge base, not the moved base branch", function()
   reviewr.open_file("f.txt")
   eq(lines(ui.panes().left_buf), { "a", "b", "c", "d" })

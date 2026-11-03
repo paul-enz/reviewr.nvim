@@ -196,42 +196,57 @@ local function jump_file(dir)
   if f then vim.notify("reviewr: " .. f, vim.log.levels.INFO) end
 end
 
-function M.apply(bufnr, overrides)
+-- Keys that act on the cursor line of a diff pane. The rest work from the
+-- changed-files panel too.
+local line_keys = { comment = true, edit = true, delete = true, nextc = true, prevc = true, next = true, prev = true }
+
+-- Binds the review keys on a buffer. opts.panel leaves out the line keys.
+function M.apply(bufnr, overrides, opts)
   bufnr = bufnr or 0
   if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
   local keys = vim.tbl_extend("force", M.defaults, overrides or {})
   local ui = require("reviewr.ui")
   local bindings = {
-    { keys.comment, function() open_comment_box() end, { "n", "x" } },
-    { keys.edit,    edit_here },
-    { keys.delete,  delete_here },
-    { keys.send,    function() export("send") end },
-    { keys.pick,    function() export("send", { pick = true }) end },
-    { keys.copy,    function() export("clipboard") end },
-    { keys.panel,   function() ui.toggle_panel() end },
-    { keys.nextc,   function() require("reviewr").jump_comment(1) end },
-    { keys.prevc,   function() require("reviewr").jump_comment(-1) end },
-    { keys.nextf,   function() jump_file(1) end },
-    { keys.prevf,   function() jump_file(-1) end },
-    { keys.refresh, function() require("reviewr").refresh() end },
-    { keys.uncommitted, function() require("reviewr").set_scope("uncommitted") end },
-    { keys.branch,  function() require("reviewr").set_scope("branch") end },
-    { keys.turn,    function() require("reviewr").set_scope("turn") end },
-    { keys.commit,  function() require("reviewr").pick_commit() end },
-    { keys.base,    function() require("reviewr").pick_base() end },
-    { keys.help,    function() ui.toggle_help(M.legend) end },
-    { keys.quit,    M.quit },
-    { keys.next,    function() vim.cmd("normal! ]c") end },
-    { keys.prev,    function() vim.cmd("normal! [c") end },
+    { "comment", function() open_comment_box() end, { "n", "x" } },
+    { "edit",    edit_here },
+    { "delete",  delete_here },
+    { "send",    function() export("send") end },
+    { "pick",    function() export("send", { pick = true }) end },
+    { "copy",    function() export("clipboard") end },
+    { "panel",   function() ui.toggle_panel() end },
+    { "nextc",   function() require("reviewr").jump_comment(1) end },
+    { "prevc",   function() require("reviewr").jump_comment(-1) end },
+    { "nextf",   function() jump_file(1) end },
+    { "prevf",   function() jump_file(-1) end },
+    { "refresh", function() require("reviewr").refresh() end },
+    { "uncommitted", function() require("reviewr").set_scope("uncommitted") end },
+    { "branch",  function() require("reviewr").set_scope("branch") end },
+    { "turn",    function() require("reviewr").set_scope("turn") end },
+    { "commit",  function() require("reviewr").pick_commit() end },
+    { "base",    function() require("reviewr").pick_base() end },
+    { "help",    function() ui.toggle_help(M.legend) end },
+    { "quit",    M.quit },
+    { "next",    function() vim.cmd("normal! ]c") end },
+    { "prev",    function() vim.cmd("normal! [c") end },
   }
+  local skip = opts and opts.panel and line_keys or {}
   for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
+    local lhs = keys[b[1]]
+    if lhs and lhs ~= "" and not skip[b[1]] then
       for _, mode in ipairs(b[3] or { "n" }) do
-        bind(bufnr, b[1], b[2], { mode = mode })
+        bind(bufnr, lhs, b[2], { mode = mode })
       end
     end
   end
   return keys
+end
+
+-- Binds the review keys as configured: the defaults, the user's overrides, or
+-- none at all with `keymaps = false`.
+function M.install(bufnr, opts)
+  local km = require("reviewr.config").get().keymaps
+  if not km then return nil end
+  return M.apply(bufnr, type(km) == "table" and km or nil, opts)
 end
 
 function M.set_defaults(tbl)

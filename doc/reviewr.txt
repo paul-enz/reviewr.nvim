@@ -63,9 +63,10 @@ In the diff panes:
         <CR> or <Esc> keeps reviewing. A review that cmd+r
         opened in Rex quits its Neovim, closing the pane
 
-In the changed-files panel, <CR> opens the file under the cursor and q
-closes the review. The pickers (gc, gb, S) open a small list: j/k or the
-arrows move, <CR> picks, <Esc> cancels.
+The changed-files panel has the same keys, except those that act on a line
+of the diff (c, e, d, n, N, ]c, [c); there <CR> opens the file under the
+cursor. The pickers (gc, gb, S) open a small list: j/k or the arrows move,
+<CR> picks, <Esc> cancels.
 
 AGENTS                                                  *reviewr-agents*
 

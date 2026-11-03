@@ -193,16 +193,14 @@ function M.open_files_panel(files)
       vim.wo[win][opt] = val
     end
     files_panel.win, files_panel.buf = win, buf
-    local function map(lhs, fn)
-      vim.keymap.set("n", lhs, fn, { buffer = buf, silent = true, nowait = true })
-    end
-    map("<CR>", function()
+    -- the review keys work here too, except those that act on a diff line
+    require("reviewr.keymaps").install(buf, { panel = true })
+    vim.keymap.set("n", "<CR>", function()
       local f = files_panel.files[vim.fn.line(".")]
       if not f then return end
       require("reviewr").open_file(f.path)
       if valid_win(state.diff.right_win) then vim.api.nvim_set_current_win(state.diff.right_win) end
-    end)
-    map("q", function() require("reviewr.keymaps").quit() end)
+    end, { buffer = buf, silent = true, nowait = true })
     if valid_win(origin) then vim.api.nvim_set_current_win(origin) end
     M.equalize()
   end
