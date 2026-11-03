@@ -237,12 +237,9 @@ function M.open_file(path)
   vim.b[left].reviewr_at, vim.b[right].reviewr_at = s.left_at, s.right_at
   vim.b[left].reviewr_source = old
   ui.show_file(left, right, path)
-  local km = config_mod.get().keymaps
-  if km then
-    local keymaps = require("reviewr.keymaps")
-    keymaps.apply(left, type(km) == "table" and km or nil)
-    keymaps.apply(right, type(km) == "table" and km or nil)
-  end
+  local keymaps = require("reviewr.keymaps")
+  keymaps.install(left)
+  keymaps.install(right)
   ui.redraw(left)
   ui.redraw(right)
   ui.open_files_panel(s.files)
@@ -262,10 +259,7 @@ local function show_empty()
     bufs[i] = buf
   end
   ui.show_file(bufs[1], bufs[2], nil)
-  local km = config_mod.get().keymaps
-  if km then
-    for _, buf in ipairs(bufs) do require("reviewr.keymaps").apply(buf, type(km) == "table" and km or nil) end
-  end
+  for _, buf in ipairs(bufs) do require("reviewr.keymaps").install(buf) end
   ui.open_files_panel({})
 end
 

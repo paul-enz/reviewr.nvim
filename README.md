@@ -156,7 +156,7 @@ The bar above the change pane always shows the next step. `?` lists every key.
 | `?` | all keys |
 | `q` | close. With unsent comments (new, or edited since the last send or copy) it asks once: Enter closes, Right then Enter or Esc keeps reviewing. A review cmd+r opened closes its pane too |
 
-In the changed-files panel, `<CR>` opens the file under the cursor and `q` closes the review.
+The changed-files panel has the same keys, except those that act on a line of the diff (`c`, `e`, `d`, `n`, `N`, `]c`, `[c`); there `<CR>` opens the file under the cursor.
 
 The pickers (`gc`, `gb`, `S`) open a small list: `j`/`k` or the arrows move, Enter picks, Esc cancels.
 
