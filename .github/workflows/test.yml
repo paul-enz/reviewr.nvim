@@ -75,8 +75,11 @@ jobs:
         os: [linux, macos]
         neovim: [v0.10.4, stable]
         include:
+          # ubuntu-latest (26.04) mounts no devpts, so :terminal can't open a
+          # pty and the agent specs fail; its action-setup-vim download also
+          # breaks on a cross-device rename.
           - os: linux
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
           - os: macos
             runs-on: macos-latest
     runs-on: ${{ matrix.runs-on }}
